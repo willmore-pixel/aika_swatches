@@ -13,7 +13,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "_site"
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
-SIZE = 512
+SIZE = 1024  # shown as a 30 cm square on the shoe, so keep enough detail
 
 shutil.rmtree(OUT, ignore_errors=True)
 (OUT / "s").mkdir(parents=True)
