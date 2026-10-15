@@ -34,5 +34,8 @@ for kind in ("leather", "canvas"):
         img.save(OUT / name, quality=85)
         swatches.append({"name": src.stem, "kind": kind, "file": name})
 
+# The shop's upload page (快速色卡上架), served at /upload/.
+shutil.copytree(ROOT / "upload", OUT / "upload")
+
 (OUT / "swatches.json").write_text(json.dumps(swatches, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"{len(swatches)} swatches")
