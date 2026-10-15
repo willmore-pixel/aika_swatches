@@ -49,6 +49,12 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .sw { display: grid; gap: 4px; font-size: 12px; font-weight: 700; text-align: center; color: var(--muted); }
 .sw i { display: block; aspect-ratio: 1; border-radius: 12px; border: 2px solid var(--line); background: var(--tile) center / cover; }
 .sw.new i { border-color: var(--ok); }
+.sw { position: relative; }
+.sw.gone { opacity: .45; }
+.sw .x { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 14px; line-height: 24px; font-weight: 900; padding: 0; }
+.sw.armed i { border-color: var(--bad); }
+.sw.armed .x { width: auto; padding: 0 8px; border-radius: 99px; font-size: 12px; }
+.list-head { display: flex; justify-content: space-between; align-items: center; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
 
@@ -119,7 +125,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <h2>目前的色卡</h2>
+    <div class="list-head"><h2>目前的色卡</h2><button class="link-btn" id="editList" type="button">刪除色卡</button></div>
+    <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
   </main>
@@ -244,21 +251,63 @@ async function loadShop() {
     say($("status"), `「${pending[i].name}」已上架 ✓ 客人重新整理網站就看得到。`, "ok");
     pending.splice(i, 1);
   }
+  for (const key of [...removing]) if (!SHOP.some(s => s.kind + "/" + s.name === key)) {
+    removing.delete(key);
+    say($("listStatus"), `「${key.split("/").slice(1).join("/")}」已從網站下架 ✓`, "ok");
+  }
   renderList();
 }
 function renderList() {
-  const cell = (n, k, url, isNew) => `<div class="sw${isNew ? " new" : ""}"><i style="background-image:url('${url}')"></i>${esc(n)}<br>${isNew ? "上架中…" : KIND_NAME[k]}</div>`;
+  const cell = (n, k, url, isNew) => {
+    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key;
+    const x = deleting && !isNew && !gone ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
+    return `<div class="sw${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}"><i style="background-image:url('${url}')"></i>${x}${esc(n)}<br>${isNew ? "上架中…" : gone ? "下架中…" : KIND_NAME[k]}</div>`;
+  };
   $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true)).join("") +
     [...SHOP].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false)).join("");
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
+// ---- Deleting a swatch: 刪除色卡 shows an × on each one; tap it, then tap again to confirm (no pop-ups). ----
+let deleting = false, armedKey = null;
+const removing = new Set();  // "kind/name" deleted from the repo but still listed on the swatch site
+$("editList").addEventListener("click", () => {
+  deleting = !deleting; armedKey = null;
+  $("editList").textContent = deleting ? "完成" : "刪除色卡";
+  say($("listStatus"), deleting ? "按色卡右上角的 ×，再按一次確認，就會從網站下架。" : "", "wait");
+  renderList();
+});
+$("list").addEventListener("click", async e => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const key = b.dataset.del;
+  if (armedKey !== key) { armedKey = key; return renderList(); }
+  armedKey = null;
+  const kind = key.split("/")[0], name = key.slice(kind.length + 1);
+  if (!token) { renderList(); return say($("listStatus"), `試用模式：正式版會把「${name}」從網站下架。這次沒有刪除。`, "wait"); }
+  say($("listStatus"), `刪除「${name}」中…`, "wait");
+  try {
+    const r = await gh(`/contents/${encodeURIComponent(kind)}`);
+    if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `讀不到色卡資料夾（${r.status}）。`);
+    const files = (await r.json()).filter(f => f.type === "file" && f.name.replace(/\.[^.]+$/, "") === name);
+    if (!files.length) throw new Error(`色卡庫裡找不到「${name}」，可能已經刪掉了。`);
+    for (const f of files) {
+      const d = await gh(`/contents/${f.path.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE", body: { message: `Remove swatch ${name} (${kind})`, sha: f.sha } });
+      if (!d.ok) throw new Error(d.status === 403 || d.status === 404 ? "這把金鑰沒有刪除權限。" : `刪除失敗（${d.status}），請再試一次。`);
+    }
+    removing.add(key);
+    say($("listStatus"), `「${name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchSite();
+  } catch (err) {
+    say($("listStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad");
+  }
+  renderList();
+});
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function watchSite() {
   clearInterval(watching);
   let tries = 0;
   watching = setInterval(async () => {
     await loadShop();
-    if (!pending.length) clearInterval(watching);
+    if (!pending.length && !removing.size) clearInterval(watching);
     else if (++tries > 40) { clearInterval(watching); say($("status"), "上傳成功，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }
