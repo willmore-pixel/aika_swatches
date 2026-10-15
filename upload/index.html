@@ -104,7 +104,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
         <span class="label">種類</span>
         <div class="seg" id="kinds">
           <button type="button" data-kind="leather" aria-pressed="true">皮革</button>
-          <button type="button" data-kind="canvas" aria-pressed="false">帆布印花</button>
+          <button type="button" data-kind="canvas" aria-pressed="false">布樣</button>
         </div>
       </div>
       <div>
@@ -143,7 +143,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 <script>
 const REPO = "willmore-pixel/aika_swatches";
 const SITE = "https://willmore-pixel.github.io/aika_swatches/";
-const KIND_NAME = { leather: "皮革", canvas: "帆布印花" };
+const KIND_NAME = { leather: "皮革", canvas: "布樣" };
 const $ = id => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
