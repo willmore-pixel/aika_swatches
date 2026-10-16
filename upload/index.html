@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>快速色卡上架</title>
+<title>快速上架</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
 <style>
-/* Shop-only page: shoot or pick a swatch photo in the same 30 cm frame as the studio, name it, and publish it
-   straight into the leather/ or canvas/ folder of this repo through the GitHub API. Same dark look as the studio. */
+/* Shop-only page, two tabs. 色卡: shoot or pick a swatch photo in the same 30 cm frame as the studio, name it, and publish it
+   straight into the leather/ or canvas/ folder of this repo. 鞋款: read a line drawing (PDF or SVG) whose painted colours mark
+   the parts, preview it as the studio will show it, and publish it into styles/. Both go through the GitHub API.
+   Same dark look as the studio. */
 :root {
   --bg: #131f24; --panel: #18262c; --tile: #1d2c33; --line: #37464f; --fg: #f1f7fb; --muted: #8a9ba5;
   --accent: #49c0f8; --accent-ink: #0b2a3a; --ok: #58cc02; --bad: #ff4b4b;
@@ -58,6 +60,48 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
 
+.tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 2px solid var(--line); }
+.tabs button { padding: 12px 4px 10px; font-weight: 900; font-size: 15px; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.big.wide { padding: 26px 8px; }
+
+/* 鞋款: the drawing on a white stage like the studio's, part tabs, a few colours to try. */
+.stage { background: #fff; border-radius: 12px; aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; }
+.stage svg { width: 100%; height: 100%; display: block; }
+.parts { display: flex; gap: 8px; flex-wrap: wrap; }
+.parts button { display: flex; align-items: center; gap: 6px; padding: 7px 12px 7px 8px; border-radius: 99px; border: 2px solid var(--line); background: var(--tile); font-weight: 800; font-size: 14px; color: var(--muted); }
+.parts button b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; border: 2px solid currentColor; font-size: 12px; }
+.parts button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #213a47; }
+.dots { display: flex; gap: 8px; flex-wrap: wrap; }
+.dots button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.dots button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.choices button, .st-card { border: 2px solid var(--line); border-radius: 14px; background: var(--tile); padding: 6px; display: grid; gap: 4px; font-size: 13px; font-weight: 800; text-align: center; }
+.choices button[aria-pressed="true"] { border-color: var(--accent); background: #213a47; }
+.thumb { background: #fff; border-radius: 9px; aspect-ratio: 4 / 3; overflow: hidden; }
+.thumb svg { width: 100%; height: 100%; display: block; }
+.map-row { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; }
+.map-row + .map-row { margin-top: 8px; }
+.chip { width: 34px; height: 34px; border-radius: 9px; border: 2px solid var(--line); box-sizing: border-box; }
+select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; font-size: 15px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 16px center, right 11px center; background-size: 5px 5px; background-repeat: no-repeat; }
+.name-row { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: center; }
+.name-row + .name-row { margin-top: 8px; }
+.name-row b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--muted); color: var(--muted); font-size: 13px; font-weight: 900; }
+.name-row .field { padding: 9px 12px; }
+.more { justify-self: start; font-size: 13px; font-weight: 800; color: var(--accent); padding: 8px 0 0; }
+.warn { color: #ffd27a; }
+.st-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.st-card { position: relative; color: var(--fg); }
+.st-card small { color: var(--muted); font-weight: 700; }
+.st-card.new { border-color: var(--ok); }
+.st-card.gone { opacity: .45; }
+.st-card.armed { border-color: var(--bad); }
+.st-card .x { position: absolute; top: -8px; right: -8px; min-width: 26px; height: 26px; border-radius: 99px; background: var(--bad); color: #fff; font-size: 14px; line-height: 26px; font-weight: 900; padding: 0 7px; box-sizing: border-box; }
+.st-card .move { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.st-card .move button { padding: 6px; border-radius: 10px; border: 2px solid var(--line); font-weight: 900; }
+.st-card .move button:disabled { opacity: .3; }
+.heads { display: flex; gap: 14px; }
+
 /* Camera and crop view: copied from the studio (30 cm square guide with a cm ruler; only the square is kept). */
 .cam { position: fixed; inset: 0; z-index: 20; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
 .cam[hidden] { display: none; }
@@ -79,12 +123,16 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 </head><body>
 <div class="app">
   <header>
-    <h1>快速色卡上架 <span>店家專用</span></h1>
+    <h1>快速上架 <span>店家專用</span></h1>
     <button class="link-btn" id="openKey" type="button">設定</button>
   </header>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button type="button" role="tab" data-tab="swatches" aria-selected="true">色卡</button>
+    <button type="button" role="tab" data-tab="styles" aria-selected="false">鞋款</button>
+  </nav>
 
   <main>
-    <p class="note" id="trialNote" hidden>試用模式：可以拍照、裁切、命名，但不會真的上架。要正式上架，請先按右上角「設定」輸入上架金鑰。</p>
+    <p class="note" id="trialNote" hidden>試用模式：每一步都可以試，但不會真的上架或刪除。要正式使用，請先按右上角「設定」輸入上架金鑰。</p>
 
     <div class="card" id="keyCard" hidden>
       <div>
@@ -99,6 +147,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
       <p class="status" id="keyStatus"></p>
     </div>
 
+    <section id="tab-swatches" style="display:grid;gap:16px">
     <div class="pickers" id="pickers">
       <label class="big"><i>📷</i>拍照<input id="snapIn" type="file" accept="image/*" capture="environment"></label>
       <label class="big"><i>🖼️</i>從相簿選<input id="albumIn" type="file" accept="image/*"></label>
@@ -129,6 +178,47 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
+    </section>
+
+    <section id="tab-styles" style="display:grid;gap:16px" hidden>
+      <label class="big wide" id="artPick"><i>📄</i>選線稿檔（PDF 或 SVG）<input id="artIn" type="file" accept=".pdf,.svg,application/pdf,image/svg+xml"></label>
+      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。</p>
+
+      <div class="card" id="artCard" hidden>
+        <div id="choiceWrap" hidden>
+          <span class="label" id="choiceLabel"></span>
+          <div class="choices" id="choices"></div>
+        </div>
+        <div class="stage"><svg id="artPrev" role="img" aria-label="鞋款預覽"></svg></div>
+        <div class="parts" id="artParts"></div>
+        <div class="dots" id="artDots"></div>
+        <div>
+          <span class="label">原圖的顏色 → 部位</span>
+          <div id="mapRows"></div>
+          <button class="more" id="moreCols" type="button" hidden></button>
+        </div>
+        <div id="nameWrap">
+          <span class="label">部位名稱（客人看到的名字）</span>
+          <div id="nameRows"></div>
+        </div>
+        <div>
+          <span class="label">鞋款名稱</span>
+          <input class="field" id="artName" type="text" maxlength="40" placeholder="例如：Loafer" enterkeyhint="done">
+        </div>
+        <p class="small warn" id="artWarn" hidden></p>
+        <div class="row">
+          <button class="btn" id="artRedo" type="button">換檔案</button>
+          <button class="btn primary" id="artPublish" type="button">上架</button>
+        </div>
+      </div>
+      <p class="status" id="artStatus"></p>
+
+      <div class="list-head"><h2>目前的鞋款</h2><div class="heads"><button class="link-btn" id="orderStyles" type="button">調整順序</button><button class="link-btn" id="delStyles" type="button">刪除</button></div></div>
+      <p class="status" id="stListStatus"></p>
+      <div class="st-list" id="stList"></div>
+      <div class="row" id="orderBar" hidden><button class="btn" id="orderCancel" type="button">取消</button><button class="btn primary" id="orderSave" type="button">儲存順序</button></div>
+      <p class="small" id="stListNote"></p>
+    </section>
   </main>
 </div>
 
@@ -161,7 +251,19 @@ let kind = "leather", haveShot = false;
 const pending = [];  // swatches published from this page that the swatch site hasn't listed yet
 
 function say(el, text, cls) { el.textContent = text; el.className = "status" + (cls ? " " + cls : ""); }
-function showTrial() { $("trialNote").hidden = !!token; $("publish").textContent = token ? "上架" : "上架（試用）"; }
+function showTrial() {
+  $("trialNote").hidden = !!token;
+  $("publish").textContent = $("artPublish").textContent = token ? "上架" : "上架（試用）";
+}
+
+// ---- Tabs: 色卡 and 鞋款. The tab is kept in the address (#styles) so a bookmark opens the right one. ----
+function showTab(t) {
+  $("tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("tab-swatches").hidden = t !== "swatches"; $("tab-styles").hidden = t !== "styles";
+  history.replaceState(null, "", t === "styles" ? "#styles" : location.pathname + location.search);
+  if (t === "styles" && !stylesLoaded) loadStyles();
+}
+$("tabs").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
 
 // ---- Upload key: entered once per phone, kept only in this browser. ----
 $("openKey").addEventListener("click", () => { $("keyCard").hidden = !$("keyCard").hidden; $("keyInput").value = token; say($("keyStatus"), ""); });
@@ -400,7 +502,565 @@ $("snapIn").addEventListener("click", e => {
   e.preventDefault(); openCam($("snapIn"));
 });
 
+// ---- Line-art reader: turns the shop's drawing (a PDF page or an SVG) into the studio's style format. ----
+// Every fill colour the shop painted can become a part: its areas are kept exactly as drawn (same points, same
+// paint order) and the studio paints the customer's pick inside them, with the lines still on top.
+// Both readers produce the same list of painted shapes: { d, t?, fill, rule, fo, stroke, sw, cap, join, miter, dash, so, clip, bb }.
+const LineArt = (() => {
+  const num = n => { const v = Math.round(n * 100) / 100; return Object.is(v, -0) ? "0" : String(v); };
+  const hex2 = v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  const toHex = c => typeof c === "string" ? (c.length === 7 ? c.toLowerCase() : null) : c && c.length >= 3 ? "#" + hex2(c[0]) + hex2(c[1]) + hex2(c[2]) : null;
+  const CAPS = ["butt", "round", "square"], JOINS = ["miter", "round", "bevel"];
+  const mul = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+  const grow = (bb, x, y) => { if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y; };
+  const EMPTY = () => [Infinity, Infinity, -Infinity, -Infinity];
+
+  // PDF: walk pdf.js's operator list, keeping the graphics state, and write each painted path in page units
+  // (y pointing down, like SVG). Transforms are applied to the points, so nothing is approximated.
+  function fromOperatorList(ol, OPS, view) {
+    const [vx0, , , vy1] = view;
+    const shapes = [], clips = [], stack = [];
+    let skipped = 0;
+    let g = { ctm: [1, 0, 0, 1, 0, 0], fill: "#000000", stroke: "#000000", fillPat: false, lw: 1, cap: 0, join: 0, miter: 10, dash: [[], 0], fa: 1, sa: 1, clip: null };
+    let d = [], bb = EMPTY(), rectOnly = true, pendingClip = null, cur = [0, 0], start = [0, 0];
+    const pt = (x, y) => { const m = g.ctm, X = m[0] * x + m[2] * y + m[4] - vx0, Y = vy1 - (m[1] * x + m[3] * y + m[5]); grow(bb, X, Y); return num(X) + " " + num(Y); };
+    const scale = () => Math.sqrt(Math.abs(g.ctm[0] * g.ctm[3] - g.ctm[1] * g.ctm[2])) || 1;
+    function addPath(ops, co) {
+      let j = 0;
+      for (const op of ops) {
+        if (op === OPS.moveTo) { cur = start = [co[j], co[j + 1]]; d.push("M " + pt(co[j], co[j + 1])); j += 2; rectOnly = false; }
+        else if (op === OPS.lineTo) { cur = [co[j], co[j + 1]]; d.push("L " + pt(co[j], co[j + 1])); j += 2; rectOnly = false; }
+        else if (op === OPS.curveTo) { d.push(`C ${pt(co[j], co[j + 1])} ${pt(co[j + 2], co[j + 3])} ${pt(co[j + 4], co[j + 5])}`); cur = [co[j + 4], co[j + 5]]; j += 6; rectOnly = false; }
+        else if (op === OPS.curveTo2) { d.push(`C ${pt(cur[0], cur[1])} ${pt(co[j], co[j + 1])} ${pt(co[j + 2], co[j + 3])}`); cur = [co[j + 2], co[j + 3]]; j += 4; rectOnly = false; }
+        else if (op === OPS.curveTo3) { d.push(`C ${pt(co[j], co[j + 1])} ${pt(co[j + 2], co[j + 3])} ${pt(co[j + 2], co[j + 3])}`); cur = [co[j + 2], co[j + 3]]; j += 4; rectOnly = false; }
+        else if (op === OPS.closePath) { d.push("Z"); cur = start; }
+        else if (op === OPS.rectangle) {
+          const [x, y, w, h] = co.slice(j, j + 4); j += 4;
+          d.push(`M ${pt(x, y)} L ${pt(x + w, y)} L ${pt(x + w, y + h)} L ${pt(x, y + h)} Z`); cur = start = [x, y];
+        }
+      }
+    }
+    function paint(doFill, doStroke, rule, close) {
+      if (close) d.push("Z");
+      if (pendingClip && d.length) {
+        const id = "c" + clips.length;
+        clips.push({ id, d: d.join(" "), rule: pendingClip, parent: g.clip, bb: bb.slice(), rect: rectOnly && g.ctm[1] === 0 && g.ctm[2] === 0 });
+        g.clip = id;
+      }
+      pendingClip = null;
+      if ((doFill || doStroke) && d.length) {
+        const s = scale(), lw = g.lw * s || 0.3;
+        if (doStroke) { bb[0] -= lw / 2; bb[1] -= lw / 2; bb[2] += lw / 2; bb[3] += lw / 2; }
+        if (doFill && g.fillPat) { skipped++; doFill = false; }
+        if (doFill || doStroke) shapes.push({
+          d: d.join(" "), fill: doFill ? g.fill : null, rule, fo: g.fa,
+          stroke: doStroke ? g.stroke : null, sw: lw, cap: g.cap, join: g.join, miter: g.miter,
+          dash: g.dash[0].length ? g.dash[0].map(v => v * s) : null, so: g.sa, clip: g.clip, bb: bb.slice()
+        });
+      }
+      d = []; bb = EMPTY(); rectOnly = true;
+    }
+    const gstate = entries => entries.forEach(([k, v]) => {
+      if (k === "LW") g.lw = v; else if (k === "LC") g.cap = v; else if (k === "LJ") g.join = v; else if (k === "ML") g.miter = v;
+      else if (k === "D") g.dash = v; else if (k === "CA") g.sa = v; else if (k === "ca") g.fa = v;
+    });
+    const F = ol.fnArray, A = ol.argsArray;
+    for (let i = 0; i < F.length; i++) {
+      const f = F[i], a = A[i];
+      switch (f) {
+        case OPS.save: stack.push({ ...g, ctm: g.ctm.slice() }); break;
+        case OPS.restore: if (stack.length) g = stack.pop(); break;
+        case OPS.transform: g.ctm = mul(a, g.ctm); break;
+        case OPS.paintFormXObjectBegin: stack.push({ ...g, ctm: g.ctm.slice() }); if (a && a[0]) g.ctm = mul(a[0], g.ctm); break;
+        case OPS.paintFormXObjectEnd: if (stack.length) g = stack.pop(); break;
+        case OPS.setLineWidth: g.lw = a[0]; break;
+        case OPS.setLineCap: g.cap = a[0]; break;
+        case OPS.setLineJoin: g.join = a[0]; break;
+        case OPS.setMiterLimit: g.miter = a[0]; break;
+        case OPS.setDash: g.dash = [a[0] || [], a[1] || 0]; break;
+        case OPS.setGState: gstate(a[0] || []); break;
+        case OPS.setFillRGBColor: g.fill = toHex(a.length === undefined ? Object.values(a) : a.length === 1 ? a[0] : a) || g.fill; g.fillPat = false; break;
+        case OPS.setStrokeRGBColor: g.stroke = toHex(a.length === undefined ? Object.values(a) : a.length === 1 ? a[0] : a) || g.stroke; break;
+        case OPS.setFillColorN: if (a && (a[0] === "TilingPattern" || a[0] === "Shading")) g.fillPat = true; break;
+        case OPS.constructPath: addPath(a[0], a[1]); break;
+        case OPS.clip: pendingClip = "nonzero"; break;
+        case OPS.eoClip: pendingClip = "evenodd"; break;
+        case OPS.fill: paint(true, false, "nonzero"); break;
+        case OPS.eoFill: paint(true, false, "evenodd"); break;
+        case OPS.stroke: paint(false, true, "nonzero"); break;
+        case OPS.closeStroke: paint(false, true, "nonzero", true); break;
+        case OPS.fillStroke: paint(true, true, "nonzero"); break;
+        case OPS.eoFillStroke: paint(true, true, "evenodd"); break;
+        case OPS.closeFillStroke: paint(true, true, "nonzero", true); break;
+        case OPS.closeEOFillStroke: paint(true, true, "evenodd", true); break;
+        case OPS.endPath: paint(false, false); break;
+        case OPS.showText: case OPS.showSpacedText: case OPS.nextLineShowText: case OPS.nextLineSetSpacingShowText:
+        case OPS.paintImageXObject: case OPS.paintInlineImageXObject: case OPS.paintImageMaskXObject: case OPS.shadingFill:
+          skipped++; break;
+      }
+    }
+    return { shapes, clips, skipped };
+  }
+
+  async function fromPdf(buffer, pdfjs) {
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false }).promise;
+    const pages = [];
+    for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
+      const page = await doc.getPage(n);
+      pages.push(fromOperatorList(await page.getOperatorList(), pdfjs.OPS, page.view));
+    }
+    return pages;
+  }
+
+  // SVG (Affinity, Illustrator…): read it in the page so CSS classes and transforms resolve, then list the shapes.
+  // Text, images, gradients and clipping inside an SVG are skipped (outline text before exporting).
+  function fromSvg(text) {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    const root = doc.documentElement;
+    if (root.nodeName !== "svg" || doc.querySelector("parsererror")) throw new Error("bad svg");
+    const host = document.createElement("div");
+    host.style.cssText = "position:absolute;left:-10000px;top:0;width:1000px;height:1000px;opacity:0;pointer-events:none";
+    const svg = document.importNode(root, true);
+    svg.setAttribute("width", "1000"); svg.setAttribute("height", "1000");
+    host.appendChild(svg); document.body.appendChild(host);
+    const shapes = [];
+    let skipped = 0;
+    try {
+      const rootInv = svg.getScreenCTM().inverse();
+      const P = (x, y) => num(x) + " " + num(y);
+      const pathOf = el => {
+        const n = el.localName, at = k => parseFloat(el.getAttribute(k)) || 0;
+        if (n === "path") return el.getAttribute("d");
+        if (n === "rect") { const x = at("x"), y = at("y"), w = at("width"), h = at("height"); return `M ${P(x, y)} L ${P(x + w, y)} L ${P(x + w, y + h)} L ${P(x, y + h)} Z`; }
+        if (n === "circle" || n === "ellipse") {
+          const cx = at("cx"), cy = at("cy"), rx = n === "circle" ? at("r") : at("rx"), ry = n === "circle" ? at("r") : at("ry"), k = 0.5523;
+          return `M ${P(cx + rx, cy)} C ${P(cx + rx, cy + ry * k)} ${P(cx + rx * k, cy + ry)} ${P(cx, cy + ry)} C ${P(cx - rx * k, cy + ry)} ${P(cx - rx, cy + ry * k)} ${P(cx - rx, cy)} C ${P(cx - rx, cy - ry * k)} ${P(cx - rx * k, cy - ry)} ${P(cx, cy - ry)} C ${P(cx + rx * k, cy - ry)} ${P(cx + rx, cy - ry * k)} ${P(cx + rx, cy)} Z`;
+        }
+        if (n === "line") return `M ${P(at("x1"), at("y1"))} L ${P(at("x2"), at("y2"))}`;
+        if (n === "polyline" || n === "polygon") {
+          const v = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number);
+          let s = "";
+          for (let i = 0; i + 1 < v.length; i += 2) s += (i ? " L " : "M ") + P(v[i], v[i + 1]);
+          return s + (n === "polygon" ? " Z" : "");
+        }
+      };
+      const colour = v => {
+        if (!v || v === "none" || v.startsWith("url")) return null;
+        const m = v.match(/rgba?\(([^)]+)\)/);
+        if (!m) return null;
+        const p = m[1].split(/[\s,/]+/).map(parseFloat);
+        return p.length > 3 && p[3] === 0 ? null : toHex(p);
+      };
+      const walk = el => {
+        for (const c of el.children) {
+          const n = c.localName;
+          if (["defs", "clipPath", "mask", "symbol", "marker", "pattern", "linearGradient", "radialGradient", "style", "title", "desc", "metadata"].includes(n)) continue;
+          const cs = getComputedStyle(c);
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+          if (n === "g" || n === "a" || n === "svg") { walk(c); continue; }
+          const d = pathOf(c);
+          if (!d) { if (n !== "g") skipped++; continue; }
+          const m = rootInv.multiply(c.getScreenCTM()), s = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
+          const fillRaw = cs.fill, fill = n === "line" || n === "polyline" ? null : colour(fillRaw), stroke = colour(cs.stroke);
+          if (fillRaw && fillRaw.startsWith("url")) skipped++;
+          const op = +cs.opacity || 1, sw = parseFloat(cs.strokeWidth) || 0;
+          if (!fill && !(stroke && sw > 0)) continue;
+          const box = c.getBBox(), bb = EMPTY();
+          [[box.x, box.y], [box.x + box.width, box.y], [box.x, box.y + box.height], [box.x + box.width, box.y + box.height]]
+            .forEach(([x, y]) => grow(bb, m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f));
+          if (stroke) { const h = sw * s / 2; bb[0] -= h; bb[1] -= h; bb[2] += h; bb[3] += h; }
+          const ident = Math.abs(m.a - 1) < 1e-9 && Math.abs(m.d - 1) < 1e-9 && !m.b && !m.c && !m.e && !m.f;
+          const dash = cs.strokeDasharray && cs.strokeDasharray !== "none" ? cs.strokeDasharray.split(/[\s,]+/).map(parseFloat).filter(x => !isNaN(x)) : null;
+          shapes.push({
+            d, t: ident ? null : `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(v => Math.round(v * 1e5) / 1e5).join(" ")})`,
+            fill, rule: cs.fillRule === "evenodd" ? "evenodd" : "nonzero", fo: (+cs.fillOpacity || 0) * op,
+            stroke: sw > 0 ? stroke : null, sw, cap: CAPS.indexOf(cs.strokeLinecap), join: JOINS.indexOf(cs.strokeLinejoin),
+            miter: parseFloat(cs.strokeMiterlimit) || 4, dash: dash && dash.length ? dash : null, so: (+cs.strokeOpacity || 0) * op, clip: null, bb
+          });
+        }
+      };
+      walk(svg);
+    } finally { host.remove(); }
+    return [{ shapes, clips: [], skipped }];
+  }
+
+  // A fill colour is offered as a part when it is clearly painted on (bright and saturated, not white, black, grey or brown).
+  function isMarker(h) {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx >= 0.55 && (mx - mn) / mx >= 0.6;
+  }
+
+  // Split a page into its separate drawings: shapes that overlap top-to-bottom, or share a marker colour, belong together.
+  function groups(page) {
+    const rows = [];
+    page.shapes.forEach((s, i) => { if (isFinite(s.bb[0])) rows.push({ y0: s.bb[1], y1: s.bb[3], idx: [i], cols: new Set(s.fill && isMarker(s.fill) ? [s.fill] : []) }); });
+    rows.sort((a, b) => a.y0 - b.y0);
+    const bands = [];
+    for (const r of rows) {
+      const last = bands[bands.length - 1];
+      if (last && r.y0 <= last.y1 + 0.5) { last.y1 = Math.max(last.y1, r.y1); last.idx.push(...r.idx); r.cols.forEach(c => last.cols.add(c)); }
+      else bands.push(r);
+    }
+    // Bands without any marker colour (a logo, a label) join their nearest neighbour; bands sharing a colour join up.
+    for (let i = 0; i < bands.length; i++) if (!bands[i].cols.size && bands.length > 1) {
+      const b = bands[i], up = bands[i - 1], dn = bands[i + 1];
+      const into = !up ? dn : !dn ? up : (b.y0 - up.y1 <= dn.y0 - b.y1 ? up : dn);
+      into.idx.push(...b.idx); into.y0 = Math.min(into.y0, b.y0); into.y1 = Math.max(into.y1, b.y1);
+      bands.splice(i--, 1);
+    }
+    for (let i = 1; i < bands.length; i++) {
+      const a = bands[i - 1], b = bands[i];
+      if ([...b.cols].some(c => a.cols.has(c))) {
+        a.idx.push(...b.idx); a.y1 = Math.max(a.y1, b.y1); b.cols.forEach(c => a.cols.add(c));
+        bands.splice(i--, 1);
+      }
+    }
+    return bands.map(b => ({ idx: new Set(b.idx), y0: b.y0, y1: b.y1 }));
+  }
+
+  // The fill colours in a set of shapes (white never becomes a part: it stays white in the studio).
+  // Marker colours come first, left to right (the toe is usually on the left, so the front comes first); then the rest, most-used first.
+  function colours(page, idx) {
+    const m = new Map();
+    page.shapes.forEach((s, i) => {
+      if (!idx.has(i) || !s.fill || s.fill === "#ffffff") return;
+      const a = Math.max((s.bb[2] - s.bb[0]) * (s.bb[3] - s.bb[1]), 1e-6), e = m.get(s.fill) || { area: 0, x: 0 };
+      e.area += a; e.x += a * (s.bb[0] + s.bb[2]) / 2; m.set(s.fill, e);
+    });
+    const all = [...m.entries()].map(([hex, e]) => ({ hex, marker: isMarker(hex), area: e.area, x: e.x / e.area }));
+    return [...all.filter(c => c.marker).sort((a, b) => a.x - b.x), ...all.filter(c => !c.marker).sort((a, b) => b.area - a.area)]
+      .map(({ hex, marker }) => ({ hex, marker }));
+  }
+
+  // Build the studio style: map = { "#rrggbb": "a" | ... } for colours that are parts. Clip ids are written as __P__-cN;
+  // the studio swaps __P__ for a prefix of its own so several drawings can share a page.
+  function build(page, idx, map, { name, parts, cm = 26 }) {
+    const items = [], used = new Set(), bb = EMPTY();
+    page.shapes.forEach((s, i) => { if (idx.has(i)) { grow(bb, s.bb[0], s.bb[1]); grow(bb, s.bb[2], s.bb[3]); } });
+    // A plain rectangle clip that holds the whole drawing changes nothing, so it is dropped.
+    const clipOf = id => {
+      while (id) {
+        const c = page.clips.find(x => x.id === id);
+        if (!(c.rect && c.bb[0] <= bb[0] + 0.01 && c.bb[1] <= bb[1] + 0.01 && c.bb[2] >= bb[2] - 0.01 && c.bb[3] >= bb[3] - 0.01)) return id;
+        id = c.parent;
+      }
+      return null;
+    };
+    const attrs = (s, fill, stroke) => {
+      let a = `d="${s.d}"` + (s.t ? ` transform="${s.t}"` : "");
+      a += fill ? ` fill="${fill}"` + (s.rule === "evenodd" ? ` fill-rule="evenodd"` : "") + (s.fo < 1 ? ` fill-opacity="${num(s.fo)}"` : "") : ` fill="none"`;
+      if (stroke) {
+        a += ` stroke="${stroke}" stroke-width="${num(s.sw)}" stroke-miterlimit="${num(s.miter)}"`;
+        if (s.cap > 0) a += ` stroke-linecap="${CAPS[s.cap]}"`;
+        if (s.join > 0) a += ` stroke-linejoin="${JOINS[s.join]}"`;
+        if (s.dash) a += ` stroke-dasharray="${s.dash.map(num).join(" ")}"`;
+        if (s.so < 1) a += ` stroke-opacity="${num(s.so)}"`;
+      }
+      return `<path ${a}/>`;
+    };
+    let run = "", runClip = null;
+    const flush = () => { if (run) items.push(runClip ? `<g clip-path="url(#__P__-${runClip})">${run}</g>` : run); run = ""; };
+    const addStr = (str, clip) => { if (clip !== runClip) { flush(); runClip = clip; } run += str; };
+    page.shapes.forEach((s, i) => {
+      if (!idx.has(i)) return;
+      const clip = clipOf(s.clip), part = s.fill && map[s.fill];
+      if (clip) used.add(clip);
+      if (part) {
+        flush();
+        items.push({ part, d: s.d, ...(s.t ? { t: s.t } : {}), ...(s.rule === "evenodd" ? { r: "evenodd" } : {}), ...(clip ? { c: clip } : {}) });
+        if (s.stroke) addStr(attrs(s, null, s.stroke), clip);
+      } else addStr(attrs(s, s.fill, s.stroke), clip);
+    });
+    flush();
+    // Clips a used clip sits inside are needed too.
+    for (const id of [...used]) { let c = page.clips.find(x => x.id === id); while (c && (c = page.clips.find(x => x.id === clipOf(c.parent)))) used.add(c.id); }
+    const defs = page.clips.filter(c => used.has(c.id)).map(c => {
+      const par = clipOf(c.parent);
+      return `<clipPath id="__P__-${c.id}"${par ? ` clip-path="url(#__P__-${par})"` : ""}><path d="${c.d}"${c.rule === "evenodd" ? ` clip-rule="evenodd"` : ""}/></clipPath>`;
+    }).join("");
+    const pad = 6, r = v => Math.round(v * 100) / 100;
+    const box = [r(bb[0]), r(bb[1]), r(bb[2] - bb[0]), r(bb[3] - bb[1])];
+    const keep = Object.fromEntries(Object.entries(parts).filter(([k]) => Object.values(map).includes(k)));
+    return {
+      name, parts: keep, bb: box, viewBox: [box[0] - pad, box[1] - pad, box[2] + 2 * pad, box[3] + 2 * pad].map(v => r(v)).join(" "),
+      pxPerCm: Math.round(box[2] / cm * 1000) / 1000, defs, items
+    };
+  }
+
+  return { fromOperatorList, fromPdf, fromSvg, groups, colours, build, isMarker };
+})();
+
+// ==== 鞋款: line drawings become studio styles in styles/<id>.json (the swatch site lists them, in order, in styles.json). ====
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
+const LETTERS = ["a", "b", "c", "d", "e", "f"];
+const DEFAULT_PART = { a: "Front", b: "Rear" };
+// Each part shows in its own colour on the preview, so it is easy to check which area went where.
+const TRY = ["#C8323C", "#1F2A44", "#2F5D46", "#C9A85A", "#7B2638", "#B9824F"];
+const TRY_MORE = ["#FFFFFF", "#F7F2E6", "#C19A6B", "#9A4E24", "#1C1C1E", "#B9B8B4", "#F4C7C3", "#6B6B2E"];
+
+// The studio's drawing code: each painted area is filled with the chosen colour, clipped to its exact shape, lines on top.
+function artMarkup(st, prefix, fills, active) {
+  const [bx, by, bw, bh] = st.bb;
+  const shape = it => `d="${it.d}"${it.t ? ` transform="${it.t}"` : ""}`;
+  let defs = "", n = 0, outline = "";
+  const body = st.items.map((it, i) => {
+    if (typeof it === "string") return it.replaceAll("__P__", prefix);
+    const id = `${prefix}-cp${n++}`;
+    defs += `<clipPath id="${id}"><path ${shape(it)}${it.r ? ` clip-rule="${it.r}"` : ""}/></clipPath>`;
+    if (active && it.part === active) {
+      const later = st.items.slice(i + 1).filter(q => typeof q !== "string" && q.part !== active);
+      defs += `<mask id="${id}-hl" maskUnits="userSpaceOnUse" x="${bx - 10}" y="${by - 10}" width="${bw + 20}" height="${bh + 20}"><rect x="${bx - 10}" y="${by - 10}" width="${bw + 20}" height="${bh + 20}" fill="#fff"/>${later.map(q => `<path ${shape(q)} fill="#000"/>`).join("")}</mask>`;
+      outline += `<g mask="url(#${id}-hl)"><path ${shape(it)} fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="2.6" stroke-linejoin="round"/><path ${shape(it)} fill="none" stroke="#6b7280" stroke-width="1.6" stroke-dasharray="5 3.5" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+    }
+    const rect = `<rect${active !== undefined ? ` data-part="${it.part}" pointer-events="visiblePainted"` : ""} x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="${fills[it.part] || "#FFFFFF"}" clip-path="url(#${id})"/>`;
+    return (it.c ? `<g clip-path="url(#${prefix}-${it.c})">${rect}</g>` : rect) +
+      (it.stroke ? `<path ${shape(it)} fill="none" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-miterlimit="10"/>` : "");
+  }).join("");
+  return `<defs>${(st.defs || "").replaceAll("__P__", prefix)}${defs}</defs><g pointer-events="none">${body}${outline}</g>`;
+}
+const thumbSvg = (st, prefix) => `<svg viewBox="${st.viewBox}">${artMarkup(st, prefix, {})}</svg>`;
+
+// ---- Reading the file ----
+let art = null;  // { pages, choices: [{ page, idx }], at, map, names, cols, showAll, active, fills, warn }
+let pdfjs = null;
+async function loadPdfjs() {
+  if (pdfjs) return pdfjs;
+  pdfjs = await import(PDFJS + "pdf.min.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs";
+  return pdfjs;
+}
+$("artIn").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  say($("artStatus"), "讀取線稿中…", "wait");
+  try {
+    const buf = await file.arrayBuffer(), head = new TextDecoder().decode(buf.slice(0, 1024));
+    let pages;
+    if (head.startsWith("%PDF") || /\.pdf$/i.test(file.name)) pages = await LineArt.fromPdf(buf, await loadPdfjs());
+    else if (/<svg[\s>]/i.test(head) || /\.svg$/i.test(file.name)) pages = LineArt.fromSvg(new TextDecoder().decode(buf));
+    else throw new Error("請選 PDF 或 SVG 檔。");
+    const choices = [];
+    pages.forEach((pg, p) => LineArt.groups(pg).forEach(g => choices.push({ page: p, idx: g.idx })));
+    if (!choices.length) throw new Error("這個檔案裡找不到線條或色塊。");
+    art = { pages, choices, at: -1, skipped: pages.reduce((n, p) => n + p.skipped, 0), base: file.name.replace(/\.[^.]+$/, "") };
+    pickChoice(0);
+    say($("artStatus"), "");
+    $("artCard").hidden = false; $("artPick").hidden = true; $("artHow").hidden = true;
+    $("artCard").scrollIntoView({ block: "start" });
+  } catch (err) {
+    console.error(err);
+    say($("artStatus"), err.message && /[一-鿿]/.test(err.message) ? err.message : "這個檔案讀不出來。請用 Illustrator 存成 PDF（或 SVG）再試一次。", "bad");
+  }
+});
+
+// One drawing of the file (a file can hold several: one per page, or several down one page).
+function pickChoice(i) {
+  if (art.at === i) return;
+  const c = art.choices[i], pg = art.pages[c.page];
+  art.at = i;
+  art.cols = LineArt.colours(pg, c.idx);
+  art.map = {}; art.names = {};
+  let L = 0;
+  art.cols.forEach(col => { art.map[col.hex] = col.marker && L < LETTERS.length ? LETTERS[L++] : ""; });
+  art.showAll = false;
+  art.active = null; art.fills = {};
+  if (art.choices.length > 1) $("artName").value = "";
+  else if (!$("artName").value) $("artName").value = art.base;
+  renderArt();
+}
+const usedParts = () => LETTERS.filter(l => Object.values(art.map).includes(l));
+const partName = l => art.names[l] ?? (DEFAULT_PART[l] || "Part " + l.toUpperCase());
+function currentStyle() {
+  const c = art.choices[art.at];
+  return LineArt.build(art.pages[c.page], c.idx, Object.fromEntries(Object.entries(art.map).filter(([, v]) => v)),
+    { name: cleanName($("artName").value) || "（未命名）", parts: Object.fromEntries(usedParts().map(l => [l, partName(l).trim() || l.toUpperCase()])) });
+}
+
+function renderArt() {
+  // Several drawings: show each as drawn (original colours) to pick from.
+  $("choiceWrap").hidden = art.choices.length < 2;
+  if (art.choices.length > 1) {
+    $("choiceLabel").textContent = `這個檔案裡有 ${art.choices.length} 個鞋款，一次上架一個。選一個：`;
+    $("choices").innerHTML = art.choices.map((c, i) => {
+      const st = LineArt.build(art.pages[c.page], c.idx, {}, { name: "", parts: {} });
+      return `<button type="button" data-ch="${i}" aria-pressed="${i === art.at}"><div class="thumb"><svg viewBox="${st.viewBox}">${artMarkup(st, "ch" + i, {})}</svg></div>第 ${i + 1} 個</button>`;
+    }).join("");
+  }
+  // Colour → part.
+  const opts = sel => `<option value=""${sel ? "" : " selected"}>不換色（照原圖）</option>` +
+    LETTERS.map(l => `<option value="${l}"${sel === l ? " selected" : ""}>部位 ${l.toUpperCase()}</option>`).join("");
+  const shown = art.cols.filter(c => c.marker || art.showAll || art.map[c.hex]);
+  $("mapRows").innerHTML = shown.map(c => `<div class="map-row"><span class="chip" style="background:${c.hex}"></span><select class="field" data-hex="${c.hex}" aria-label="${c.hex} 的部位">${opts(art.map[c.hex])}</select></div>`).join("") ||
+    `<p class="small">沒有找到鮮豔的顏色。可以按下面「顯示其他顏色」，或回 Illustrator 把部位塗上顏色。</p>`;
+  const others = art.cols.length - shown.length;
+  $("moreCols").hidden = !others && !art.showAll;
+  $("moreCols").textContent = art.showAll ? "只看鮮豔的顏色" : `顯示其他顏色（${others}）`;
+  // Part names.
+  const parts = usedParts();
+  $("nameWrap").hidden = !parts.length;
+  $("nameRows").innerHTML = parts.map(l => `<div class="name-row"><b>${l.toUpperCase()}</b><input class="field" data-name="${l}" maxlength="20" value="${esc(partName(l))}" placeholder="例如：Front"></div>`).join("");
+  const w = [];
+  if (!parts.length) w.push("還沒有可換色的部位：請把至少一種顏色設成部位。");
+  if (art.skipped) w.push(`有 ${art.skipped} 個物件（文字、圖片或漸層）無法使用，已略過。文字請先「建立外框」再存檔。`);
+  $("artWarn").hidden = !w.length; $("artWarn").textContent = w.join(" ");
+  renderArtPreview();
+}
+function renderArtPreview() {
+  const st = currentStyle(), parts = Object.keys(st.parts);
+  if (art.active && !parts.includes(art.active)) art.active = null;
+  const fills = Object.fromEntries(parts.map(l => [l, art.fills[l] ?? TRY[LETTERS.indexOf(l)]]));
+  $("artPrev").setAttribute("viewBox", st.viewBox);
+  $("artPrev").innerHTML = artMarkup(st, "pv", fills, art.active);
+  $("artParts").innerHTML = parts.map(l => `<button type="button" data-p="${l}" aria-pressed="${l === art.active}"><b>${l.toUpperCase()}</b>${esc(st.parts[l])}</button>`).join("");
+  $("artDots").hidden = !art.active;
+  const cur = art.active && fills[art.active];
+  $("artDots").innerHTML = [...TRY, ...TRY_MORE].map(h => `<button type="button" data-c="${h}" style="background:${h}" aria-label="${h}" aria-pressed="${!!cur && cur.toLowerCase() === h.toLowerCase()}"></button>`).join("");
+}
+$("choices").addEventListener("click", e => { const b = e.target.closest("[data-ch]"); if (b) pickChoice(+b.dataset.ch); });
+$("mapRows").addEventListener("change", e => { const s = e.target.closest("[data-hex]"); if (s) { art.map[s.dataset.hex] = s.value; renderArt(); } });
+$("moreCols").addEventListener("click", () => { art.showAll = !art.showAll; renderArt(); });
+$("nameRows").addEventListener("input", e => { const i = e.target.closest("[data-name]"); if (i) { art.names[i.dataset.name] = i.value; renderArtPreview(); } });
+$("artParts").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b) { art.active = art.active === b.dataset.p ? null : b.dataset.p; renderArtPreview(); } });
+$("artPrev").addEventListener("click", e => { const p = e.target.dataset && e.target.dataset.part; art.active = p && p !== art.active ? p : null; renderArtPreview(); });
+$("artDots").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (b && art.active) { art.fills[art.active] = b.dataset.c; renderArtPreview(); } });
+$("artRedo").addEventListener("click", () => { art = null; $("artCard").hidden = true; $("artPick").hidden = false; $("artHow").hidden = false; $("artName").value = ""; say($("artStatus"), ""); $("artIn").click(); });
+
+$("artPublish").addEventListener("click", async () => {
+  if (!art) return;
+  const name = cleanName($("artName").value);
+  if (!name) { $("artName").focus(); return say($("artStatus"), "請先輸入鞋款名稱。", "bad"); }
+  const st = currentStyle();
+  if (!Object.keys(st.parts).length) return say($("artStatus"), "請至少把一種顏色設成部位。", "bad");
+  if (STYLE_LIST.some(s => s.name === name) || stPending.some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
+  const id = "s" + Date.now().toString(36), body = { ...st, added: new Date().toISOString() };
+  if (!token) {
+    // Trial: it joins the list on this page only, so ordering and deleting can be tried too.
+    STYLE_LIST.push({ id, ...body, trial: true }); trialList = true;
+    closeArt(); renderStyleList();
+    return say($("artStatus"), `試用模式：正式上架時，「${name}」會加到網站鞋款的最後面，約 1–2 分鐘後客人就看得到。這次沒有上架（下面的清單只在這頁試用）。`, "wait");
+  }
+  $("artPublish").disabled = $("artRedo").disabled = true;
+  try {
+    say($("artStatus"), "上傳中…", "wait");
+    const json = JSON.stringify(body);
+    const r = await gh(`/contents/styles/${id}.json`, { method: "PUT", body: { message: `Add style ${name}`, content: b64utf8(json) } });
+    if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `上傳失敗（${r.status}），請再試一次。`);
+    stPending.push({ id, ...body });
+    closeArt(); renderStyleList();
+    say($("artStatus"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchStyles();
+  } catch (err) {
+    say($("artStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再按一次。" : err.message, "bad");
+  } finally { $("artPublish").disabled = $("artRedo").disabled = false; }
+});
+function closeArt() { art = null; $("artCard").hidden = true; $("artPick").hidden = false; $("artHow").hidden = false; $("artName").value = ""; }
+const b64utf8 = s => { const b = new TextEncoder().encode(s); let out = ""; for (let i = 0; i < b.length; i += 0x8000) out += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(out); };
+
+// ---- The styles customers see now (styles.json on the swatch site), plus uploads still being published. ----
+let STYLE_LIST = [], stylesLoaded = false, trialList = false, stWatch = null;
+const stPending = [], stRemoving = new Set();
+let stMode = "", stArmed = null, newOrder = null;  // stMode: "" | "order" | "delete"
+async function loadStyles() {
+  try {
+    const r = await fetch(SITE + "styles.json", { cache: "no-store" });
+    if (r.ok) { if (!trialList) STYLE_LIST = await r.json(); $("stListNote").textContent = ""; }
+    else $("stListNote").textContent = r.status === 404 ? "網站上還沒有鞋款清單。" : "現在讀不到網站上的鞋款清單。";
+    stylesLoaded = true;
+  } catch { $("stListNote").textContent = "現在讀不到網站上的鞋款清單。"; }
+  for (let i = stPending.length - 1; i >= 0; i--) if (STYLE_LIST.some(s => s.id === stPending[i].id)) {
+    say($("artStatus"), `「${stPending[i].name}」已上架 ✓ 客人重新整理網站就看得到。`, "ok");
+    stPending.splice(i, 1);
+  }
+  for (const id of [...stRemoving]) if (!STYLE_LIST.some(s => s.id === id)) { stRemoving.delete(id); say($("stListStatus"), "已從網站下架 ✓", "ok"); }
+  if (orderSaving && orderSaving.every((id, i) => STYLE_LIST.filter(s => orderSaving.includes(s.id))[i]?.id === id)) { orderSaving = null; say($("stListStatus"), "新的順序已上線 ✓", "ok"); }
+  renderStyleList();
+}
+function renderStyleList() {
+  const list = newOrder ? newOrder.map(id => STYLE_LIST.find(s => s.id === id)).filter(Boolean) : STYLE_LIST;
+  const card = (s, i, isNew) => {
+    const gone = stRemoving.has(s.id), armed = stArmed === s.id;
+    const x = stMode === "delete" && !isNew && !gone ? `<button class="x" type="button" data-del="${s.id}" aria-label="刪除 ${esc(s.name)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
+    const move = stMode === "order" && !isNew ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
+    return `<div class="st-card${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${isNew ? "上架中…" : gone ? "下架中…" : Object.values(s.parts).map(esc).join("・")}${s.trial ? "（試用）" : ""}</small>${move}</div>`;
+  };
+  $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
+  $("orderBar").hidden = stMode !== "order";
+  $("orderStyles").textContent = stMode === "order" ? "取消" : "調整順序";
+  $("delStyles").textContent = stMode === "delete" ? "完成" : "刪除";
+  if (!list.length && !stPending.length && !$("stListNote").textContent) $("stListNote").textContent = "還沒有鞋款。";
+}
+$("orderStyles").addEventListener("click", () => {
+  stMode = stMode === "order" ? "" : "order"; stArmed = null;
+  newOrder = stMode === "order" ? STYLE_LIST.map(s => s.id) : null;
+  say($("stListStatus"), stMode === "order" ? "用 ◀ ▶ 移動，排好後按「儲存順序」。網站上的鞋款會照這個順序排。" : "", "wait");
+  renderStyleList();
+});
+$("orderCancel").addEventListener("click", () => { stMode = ""; newOrder = null; say($("stListStatus"), ""); renderStyleList(); });
+$("delStyles").addEventListener("click", () => {
+  stMode = stMode === "delete" ? "" : "delete"; stArmed = null; newOrder = null;
+  say($("stListStatus"), stMode === "delete" ? "按鞋款右上角的 ×，再按一次確認，就會從網站下架。" : "", "wait");
+  renderStyleList();
+});
+let orderSaving = null;
+$("orderSave").addEventListener("click", async () => {
+  const ids = newOrder;
+  stMode = ""; newOrder = null;
+  if (!token) {
+    STYLE_LIST = ids.map(id => STYLE_LIST.find(s => s.id === id)); trialList = true; renderStyleList();
+    return say($("stListStatus"), "試用模式：正式使用時，網站上的鞋款會改成這個順序。這次沒有改（只在這頁試用）。", "wait");
+  }
+  renderStyleList();
+  say($("stListStatus"), "儲存順序中…", "wait");
+  try {
+    const cur = await gh("/contents/styles/order.json");
+    const sha = cur.ok ? (await cur.json()).sha : undefined;
+    const r = await gh("/contents/styles/order.json", { method: "PUT", body: { message: "Reorder styles", content: b64utf8(JSON.stringify(ids, null, 1) + "\n"), ...(sha ? { sha } : {}) } });
+    if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
+    STYLE_LIST = ids.map(id => STYLE_LIST.find(s => s.id === id)); orderSaving = ids; renderStyleList();
+    say($("stListStatus"), "順序已儲存，網站更新中（約 1–2 分鐘）…", "wait");
+    watchStyles();
+  } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
+});
+$("stList").addEventListener("click", async e => {
+  const mv = e.target.closest("[data-mv]");
+  if (mv) {
+    const i = +mv.dataset.mv, j = i + +mv.dataset.d;
+    [newOrder[i], newOrder[j]] = [newOrder[j], newOrder[i]];
+    return renderStyleList();
+  }
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const id = b.dataset.del, s = STYLE_LIST.find(x => x.id === id);
+  if (stArmed !== id) { stArmed = id; return renderStyleList(); }
+  stArmed = null;
+  if (STYLE_LIST.filter(x => !stRemoving.has(x.id)).length < 2) { renderStyleList(); return say($("stListStatus"), "網站至少要留一個鞋款。", "bad"); }
+  if (!token) {
+    STYLE_LIST = STYLE_LIST.filter(x => x.id !== id); trialList = true; renderStyleList();
+    return say($("stListStatus"), `試用模式：正式使用時，「${s.name}」會從網站下架。這次沒有刪除（只在這頁試用）。`, "wait");
+  }
+  say($("stListStatus"), `刪除「${s.name}」中…`, "wait");
+  try {
+    const f = await gh(`/contents/styles/${id}.json`);
+    if (!f.ok) throw new Error(f.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `鞋款庫裡找不到「${s.name}」，可能已經刪掉了。`);
+    const d = await gh(`/contents/styles/${id}.json`, { method: "DELETE", body: { message: `Remove style ${s.name}`, sha: (await f.json()).sha } });
+    if (!d.ok) throw new Error(d.status === 403 || d.status === 404 ? "這把金鑰沒有刪除權限。" : `刪除失敗（${d.status}），請再試一次。`);
+    stRemoving.add(id);
+    say($("stListStatus"), `「${s.name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchStyles();
+  } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
+  renderStyleList();
+});
+function watchStyles() {
+  clearInterval(stWatch);
+  let tries = 0;
+  stWatch = setInterval(async () => {
+    await loadStyles();
+    if (!stPending.length && !stRemoving.size && !orderSaving) clearInterval(stWatch);
+    else if (++tries > 40) { clearInterval(stWatch); say($("stListStatus"), "已送出，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
+  }, 15000);
+}
+
 showTrial();
 loadShop();
+if (location.hash === "#styles") showTab("styles");
 </script>
 </body></html>
