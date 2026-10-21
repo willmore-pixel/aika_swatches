@@ -112,6 +112,15 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
 .opts { display: grid; gap: 14px; }
 .st-card.editing { border-color: var(--accent); }
+/* Sole options: the main drawing's own sole, then other drawings of the same shoe with another sole. */
+.sole-row { display: grid; grid-template-columns: 34px 112px 1fr; gap: 10px; align-items: center; }
+.sole-row + .sole-row { margin-top: 8px; }
+.sole-row > span:not(.chip) { font-size: 14px; font-weight: 800; color: var(--muted); }
+.sole-row .field { padding: 9px 12px; }
+.sole-row .field:disabled { opacity: .35; }
+.sole-row.off .chip { opacity: .35; }
+#soleView { margin-top: 12px; }
+#soleView .chip { width: 22px; height: 22px; border-radius: 7px; }
 
 /* Camera and crop view: copied from the studio (30 cm square guide with a cm ruler; only the square is kept). */
 .cam { position: fixed; inset: 0; z-index: 20; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -193,7 +202,7 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 
     <section id="tab-styles" style="display:grid;gap:16px" hidden>
       <label class="big wide" id="artPick"><i>📄</i>選線稿檔（PDF 或 SVG）<input id="artIn" type="file" accept=".pdf,.svg,application/pdf,image/svg+xml"></label>
-      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。</p>
+      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。<br>同一雙鞋有不同鞋底的話，在同一個檔案裡再放一雙只換了鞋底的（不用上色），上架時就能設成鞋底選項。</p>
 
       <div class="card" id="artCard" hidden>
         <div id="choiceWrap" hidden>
@@ -211,6 +220,12 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
         <div id="nameWrap">
           <span class="label">部位名稱（客人看到的名字）</span>
           <div id="nameRows"></div>
+        </div>
+        <div id="soleWrap" hidden>
+          <span class="label">鞋底選項</span>
+          <div id="soleRows"></div>
+          <div class="parts" id="soleView"></div>
+          <p class="small" id="soleNote" style="margin-top:10px"></p>
         </div>
         <div class="opts" id="artOpts"></div>
         <div>
@@ -707,32 +722,224 @@ const LineArt = (() => {
     return mx >= 0.55 && (mx - mn) / mx >= 0.6;
   }
 
-  // Split a page into its separate drawings: shapes that overlap top-to-bottom, or share a marker colour, belong together.
+  // Split a page into its separate drawings. Shapes that overlap become blocks (drawings side by side stay apart);
+  // a top view and the side view under it join up when they share a painted colour, or are both unpainted.
   function groups(page) {
     const rows = [];
-    page.shapes.forEach((s, i) => { if (isFinite(s.bb[0])) rows.push({ y0: s.bb[1], y1: s.bb[3], idx: [i], cols: new Set(s.fill && isMarker(s.fill) ? [s.fill] : []) }); });
-    rows.sort((a, b) => a.y0 - b.y0);
+    page.shapes.forEach((s, i) => { if (isFinite(s.bb[0])) rows.push({ i, bb: s.bb }); });
+    if (!rows.length) return [];
+    const W = Math.max(...rows.map(r => r.bb[2])) - Math.min(...rows.map(r => r.bb[0]));
+    // Rows: shapes that overlap top-to-bottom. Within a row, a clear gap left-to-right starts a new block.
+    rows.sort((a, b) => a.bb[1] - b.bb[1]);
     const bands = [];
     for (const r of rows) {
       const last = bands[bands.length - 1];
-      if (last && r.y0 <= last.y1 + 0.5) { last.y1 = Math.max(last.y1, r.y1); last.idx.push(...r.idx); r.cols.forEach(c => last.cols.add(c)); }
-      else bands.push(r);
+      if (last && r.bb[1] <= last.y1 + 0.5) { last.y1 = Math.max(last.y1, r.bb[3]); last.rows.push(r); }
+      else bands.push({ y1: r.bb[3], rows: [r] });
     }
-    // Bands without any marker colour (a logo, a label) join their nearest neighbour; bands sharing a colour join up.
-    for (let i = 0; i < bands.length; i++) if (!bands[i].cols.size && bands.length > 1) {
-      const b = bands[i], up = bands[i - 1], dn = bands[i + 1];
-      const into = !up ? dn : !dn ? up : (b.y0 - up.y1 <= dn.y0 - b.y1 ? up : dn);
-      into.idx.push(...b.idx); into.y0 = Math.min(into.y0, b.y0); into.y1 = Math.max(into.y1, b.y1);
-      bands.splice(i--, 1);
-    }
-    for (let i = 1; i < bands.length; i++) {
-      const a = bands[i - 1], b = bands[i];
-      if ([...b.cols].some(c => a.cols.has(c))) {
-        a.idx.push(...b.idx); a.y1 = Math.max(a.y1, b.y1); b.cols.forEach(c => a.cols.add(c));
-        bands.splice(i--, 1);
+    let blocks = [];
+    for (const band of bands) {
+      band.rows.sort((a, b) => a.bb[0] - b.bb[0]);
+      let cur = null;
+      for (const r of band.rows) {
+        if (cur && r.bb[0] <= cur.bb[2] + W * 0.02) { cur.idx.push(r.i); cur.bb = [Math.min(cur.bb[0], r.bb[0]), Math.min(cur.bb[1], r.bb[1]), Math.max(cur.bb[2], r.bb[2]), Math.max(cur.bb[3], r.bb[3])]; }
+        else blocks.push(cur = { idx: [r.i], bb: r.bb.slice() });
       }
     }
-    return bands.map(b => ({ idx: new Set(b.idx), y0: b.y0, y1: b.y1 }));
+    // A block that ended up inside another block's box (a row split off by a gap) belongs to it.
+    const inside = (a, b) => a.bb[0] >= b.bb[0] - 0.5 && a.bb[1] >= b.bb[1] - 0.5 && a.bb[2] <= b.bb[2] + 0.5 && a.bb[3] <= b.bb[3] + 0.5;
+    const join = (a, b) => { a.idx.push(...b.idx); a.bb = [Math.min(a.bb[0], b.bb[0]), Math.min(a.bb[1], b.bb[1]), Math.max(a.bb[2], b.bb[2]), Math.max(a.bb[3], b.bb[3])]; blocks = blocks.filter(x => x !== b); };
+    for (let again = true; again;) {
+      again = false;
+      for (const a of blocks) for (const b of blocks) if (a !== b && inside(b, a)) { join(a, b); again = true; break; }
+    }
+    const cols = b => new Set(b.idx.map(i => page.shapes[i].fill).filter(f => f && isMarker(f)));
+    const area = b => (b.bb[2] - b.bb[0]) * (b.bb[3] - b.bb[1]);
+    const xOver = (a, b) => (Math.min(a.bb[2], b.bb[2]) - Math.max(a.bb[0], b.bb[0])) / Math.min(a.bb[2] - a.bb[0], b.bb[2] - b.bb[0]);
+    // b sits right under a: they overlap left-to-right and nothing else is between them.
+    const under = (a, b) => b.bb[1] >= a.bb[3] - 0.5 && xOver(a, b) > 0.5 &&
+      !blocks.some(c => c !== a && c !== b && xOver(a, c) > 0.3 && c.bb[1] >= a.bb[3] - 0.5 && c.bb[3] <= b.bb[1] + 0.5);
+    const big = Math.max(...blocks.map(area));
+    const pairs = [];
+    for (const a of blocks) for (const b of blocks) if (a !== b && area(a) > big * 0.15 && area(b) > big * 0.15 && under(a, b)) pairs.push([a, b]);
+    // Painted views that share a colour join (a top view can sit over a side view, or a third view under that).
+    for (const [a, b] of pairs) {
+      if (!blocks.includes(a) || !blocks.includes(b)) continue;
+      const ca = cols(a);
+      if ([...cols(b)].some(c => ca.has(c))) { a.done = true; join(a, b); }
+    }
+    // Unpainted views pair up two by two, closest first.
+    pairs.filter(([a, b]) => blocks.includes(a) && blocks.includes(b) && !a.done && !b.done && !cols(a).size && !cols(b).size)
+      .sort((p, q) => (p[1].bb[1] - p[0].bb[3]) - (q[1].bb[1] - q[0].bb[3]))
+      .forEach(([a, b]) => { if (blocks.includes(a) && blocks.includes(b) && !a.done && !b.done) { a.done = true; join(a, b); } });
+    // Small leftovers (a logo, a label) join the nearest drawing.
+    const dist = (a, b) => Math.hypot(Math.max(0, a.bb[0] - b.bb[2], b.bb[0] - a.bb[2]), Math.max(0, a.bb[1] - b.bb[3], b.bb[1] - a.bb[3]));
+    for (const s of blocks.filter(b => area(b) < big * 0.15)) {
+      const others = blocks.filter(b => b !== s && area(b) >= big * 0.15);
+      if (others.length) join(others.reduce((m, b) => dist(s, b) < dist(s, m) ? b : m), s);
+    }
+    return blocks.sort((a, b) => a.bb[1] - b.bb[1] || a.bb[0] - b.bb[0])
+      .map(b => ({ idx: new Set(b.idx.sort((x, y) => x - y)), y0: b.bb[1], y1: b.bb[3], bb: b.bb, painted: cols(b).size > 0 }));
+  }
+
+  // Sole options: another drawing of the same shoe, in the same file, where only the sole is different
+  // (another colour, or another shape such as a thick sole). Its views are lined up with the main drawing's
+  // by the shapes they share; then the sole colours are swapped, or the sole shapes are swapped in.
+  // Sole colours: fills that are not white or painted parts, used for something wide (so not lettering or stitches).
+  const isWhite = h => h === "#ffffff" || [1, 3, 5].every(i => parseInt(h.slice(i, i + 2), 16) >= 248);
+  function soleColours(page, idx, partCols) {
+    const bb = EMPTY();
+    idx.forEach(i => { grow(bb, page.shapes[i].bb[0], page.shapes[i].bb[1]); grow(bb, page.shapes[i].bb[2], page.shapes[i].bb[3]); });
+    const set = new Set();
+    idx.forEach(i => { const s = page.shapes[i]; if (s.fill && !isWhite(s.fill) && !isMarker(s.fill) && !partCols.has(s.fill) && s.bb[2] - s.bb[0] > (bb[2] - bb[0]) * 0.2) set.add(s.fill); });
+    return { set, bb };
+  }
+  // The sole's colours for its button: the welt (highest in the side view), then the two biggest.
+  function soleTile(shapes, set, midY) {
+    const m = new Map();
+    shapes.forEach(s => {
+      if (!s.fill || !set.has(s.fill) || (s.bb[1] + s.bb[3]) / 2 < midY) return;
+      const a = (s.bb[2] - s.bb[0]) * (s.bb[3] - s.bb[1]), e = m.get(s.fill) || { a: 0, y: 0 };
+      e.a += a; e.y += a * (s.bb[1] + s.bb[3]) / 2; m.set(s.fill, e);
+    });
+    const all = [...m.entries()].map(([h, e]) => ({ h, a: e.a, y: e.y / (e.a || 1) }));
+    if (!all.length) return null;
+    const edge = all.reduce((p, q) => q.y < p.y ? q : p), rest = all.filter(c => c !== edge).sort((p, q) => q.a - p.a).map(c => c.h);
+    return [edge.h, rest[0] || edge.h, rest[1] || rest[0] || edge.h];
+  }
+  function mainTile(page, idx, partCols = new Set()) {
+    const { set, bb } = soleColours(page, idx, partCols);
+    return soleTile([...idx].map(i => page.shapes[i]), set, (bb[1] + bb[3]) / 2);
+  }
+  // Returns null when the two drawings can't be lined up, else
+  // { map, tile } (same shapes, other colours) or { page, idx, tile } (a drawing with the new sole, for build()).
+  // partCols: the main drawing's colours that are parts (they never count as sole).
+  function soleDiff(page, mainIdx, varIdx, partCols = new Set()) {
+    const S = page.shapes, M = [...mainIdx], V = [...varIdx];
+    const kind = s => (s.fill ? 1 : 0) + (s.stroke ? 2 : 0);
+    const w = s => s.bb[2] - s.bb[0], h = s => s.bb[3] - s.bb[1];
+    // Offsets: every pair of same-sized shapes votes for how far apart they are.
+    const votes = new Map();
+    for (const vi of V) {
+      const v = S[vi];
+      if (w(v) < 3 || h(v) < 3) continue;
+      for (const mi of M) {
+        const m = S[mi];
+        if (kind(m) !== kind(v) || Math.abs(w(m) - w(v)) > 1 || Math.abs(h(m) - h(v)) > 1) continue;
+        const key = Math.round(m.bb[0] - v.bb[0]) + "," + Math.round(m.bb[1] - v.bb[1]);
+        votes.set(key, (votes.get(key) || 0) + 1);
+      }
+    }
+    const ranked = [...votes.entries()].map(([k, n]) => ({ o: k.split(",").map(Number), n })).sort((a, b) => b.n - a.n);
+    if (!ranked.length || ranked[0].n < 3) return null;
+    // Up to two offsets (the top and side views may have been moved by different amounts).
+    const offs = [ranked[0].o];
+    const second = ranked.find(r => Math.hypot(r.o[0] - offs[0][0], r.o[1] - offs[0][1]) > 3 && r.n >= Math.max(3, ranked[0].n * 0.3));
+    if (second) offs.push(second.o);
+    // Match shapes: same kind, all four edges within 1.5 once moved.
+    const used = new Set(), pair = new Map(), offOf = new Map();
+    const near = (m, v, o) => Math.abs(m.bb[0] - v.bb[0] - o[0]) < 2 && Math.abs(m.bb[1] - v.bb[1] - o[1]) < 2 && Math.abs(m.bb[2] - v.bb[2] - o[0]) < 2 && Math.abs(m.bb[3] - v.bb[3] - o[1]) < 2;
+    for (const vi of V) for (const o of offs) {
+      const v = S[vi], mi = M.find(mi => !used.has(mi) && kind(S[mi]) === kind(v) && near(S[mi], v, o));
+      if (mi !== undefined) { used.add(mi); pair.set(vi, mi); offOf.set(vi, o); break; }
+    }
+    if (pair.size < Math.min(M.length, V.length) * 0.25) return null;
+    // Each offset, made exact from the shapes that matched with it.
+    const exact = offs.map(o => {
+      const hits = [...offOf.entries()].filter(([, q]) => q === o).map(([vi]) => [S[pair.get(vi)].bb[0] - S[vi].bb[0], S[pair.get(vi)].bb[1] - S[vi].bb[1]]);
+      return hits.length ? [hits.reduce((t, p) => t + p[0], 0) / hits.length, hits.reduce((t, p) => t + p[1], 0) / hits.length] : o;
+    });
+    // The offset of a shape that has no match: the one of the nearest shape that has.
+    const centre = s => [(s.bb[0] + s.bb[2]) / 2, (s.bb[1] + s.bb[3]) / 2];
+    const offV = new Map([...offOf].map(([vi, o]) => [vi, exact[offs.indexOf(o)]]));
+    const offM = new Map([...pair].map(([vi, mi]) => [mi, offV.get(vi)]));
+    const offIn = known => i => {
+      if (known.has(i)) return known.get(i);
+      const [cx, cy] = centre(S[i]);
+      let best = Infinity, o = exact[0];
+      for (const [q, oq] of known) { const [x, y] = centre(S[q]), d = Math.hypot(x - cx, y - cy); if (d < best) { best = d; o = oq; } }
+      return o;
+    };
+    const offFor = offIn(offV), offForM = offIn(offM);
+    const ms = soleColours(page, mainIdx, partCols), vs = soleColours(page, varIdx, partCols);
+    // Same shape, other colour: a recolour (only the main drawing's sole colours change).
+    const recol = new Map();  // main shape index → new fill
+    for (const [vi, mi] of pair) {
+      const m = S[mi], v = S[vi];
+      if (m.fill && v.fill && m.fill !== v.fill && ms.set.has(m.fill)) recol.set(mi, v.fill);
+    }
+    // New shapes in the other drawing's sole colours are added; the main drawing's sole shapes they cover are removed.
+    const added = V.filter(vi => !pair.has(vi) && S[vi].fill && vs.set.has(S[vi].fill));
+    const cover = EMPTY();
+    added.forEach(vi => { const [dx, dy] = offFor(vi), b = S[vi].bb; grow(cover, b[0] + dx, b[1] + dy); grow(cover, b[2] + dx, b[3] + dy); });
+    const tol = (ms.bb[3] - ms.bb[1]) * 0.02;
+    const pairedM = new Set(pair.values());
+    const removed = new Set(added.length ? M.filter(mi => {
+      const s = S[mi];
+      return !pairedM.has(mi) && s.fill && ms.set.has(s.fill) && s.bb[0] >= cover[0] - tol && s.bb[1] >= cover[1] - tol && s.bb[2] <= cover[2] + tol && s.bb[3] <= cover[3] + tol;
+    }) : []);
+    // A sole shape the other drawing doesn't have (a heel lift drawn as part of the sole there) takes
+    // the colour the other drawing shows in the same place.
+    const ctx = document.createElement("canvas").getContext("2d");
+    const path2d = s => {
+      const p = new Path2D(), m = s.t && s.t.match(/^matrix\(([^)]+)\)$/);
+      p.addPath(new Path2D(s.d), m ? new DOMMatrix(m[1].trim().split(/[\s,]+/).map(Number)) : undefined);
+      return p;
+    };
+    const paths = new Map(), pathOf = i => paths.get(i) || paths.set(i, path2d(S[i])).get(i);
+    for (const mi of M) {
+      const s = S[mi];
+      if (pairedM.has(mi) || removed.has(mi) || !s.fill || !ms.set.has(s.fill) || (s.t && !/^matrix\(/.test(s.t))) continue;
+      const [dx, dy] = offForM(mi), votes = new Map();
+      for (let gx = 1; gx < 8; gx++) for (let gy = 1; gy < 8; gy++) {
+        const x = s.bb[0] + (s.bb[2] - s.bb[0]) * gx / 8, y = s.bb[1] + (s.bb[3] - s.bb[1]) * gy / 8;
+        if (!ctx.isPointInPath(pathOf(mi), x, y, s.rule)) continue;
+        for (let k = V.length - 1; k >= 0; k--) {
+          const v = S[V[k]];
+          if (!v.fill || (v.t && !/^matrix\(/.test(v.t)) || !ctx.isPointInPath(pathOf(V[k]), x - dx, y - dy, v.rule)) continue;
+          if (vs.set.has(v.fill)) votes.set(v.fill, (votes.get(v.fill) || 0) + 1);
+          break;
+        }
+      }
+      const top = [...votes].sort((p, q) => q[1] - p[1])[0];
+      if (top && top[0] !== s.fill) recol.set(mi, top[0]);
+    }
+    const midY = (ms.bb[1] + ms.bb[3]) / 2;
+    // Only colours changed, the same way everywhere: a colour map is enough.
+    const map = {};
+    let consistent = true;
+    for (const mi of M) {
+      const f = S[mi].fill;
+      if (!f || !ms.set.has(f)) continue;
+      const to = recol.get(mi) || f;
+      if (f in map && map[f] !== to) consistent = false;
+      map[f] = to;
+    }
+    Object.keys(map).forEach(f => { if (map[f] === f) delete map[f]; });
+    if (!added.length && !removed.size && consistent) {
+      if (!Object.keys(map).length) return null;
+      const shapes = M.map(i => S[i]).map(s => s.fill && map[s.fill] ? { ...s, fill: map[s.fill] } : s);
+      return { map, tile: soleTile(shapes, new Set(Object.values(map)), midY) };
+    }
+    // Otherwise a drawing with the new sole: each added shape goes after the shape that comes before it in the other drawing.
+    const after = new Map();
+    let anchor = -1;
+    for (const vi of V) {
+      if (pair.has(vi)) { anchor = pair.get(vi); continue; }
+      if (!added.includes(vi)) continue;
+      const [dx, dy] = offFor(vi), s = S[vi];
+      const moved = { ...s, t: `translate(${num(dx)} ${num(dy)})` + (s.t ? " " + s.t : ""), clip: null, bb: [s.bb[0] + dx, s.bb[1] + dy, s.bb[2] + dx, s.bb[3] + dy] };
+      if (!after.has(anchor)) after.set(anchor, []);
+      after.get(anchor).push(moved);
+    }
+    const shapes = [...(after.get(-1) || [])];
+    for (const mi of M) {
+      if (!removed.has(mi)) shapes.push(recol.has(mi) ? { ...S[mi], fill: recol.get(mi) } : S[mi]);
+      shapes.push(...(after.get(mi) || []));
+    }
+    const out = { shapes, clips: page.clips, skipped: 0 };
+    const newCols = new Set([...vs.set, ...recol.values()]);
+    return { page: out, idx: new Set(shapes.map((_, i) => i)), tile: soleTile(shapes, newCols, midY) };
   }
 
   // The fill colours in a set of shapes (white never becomes a part: it stays white in the studio).
@@ -804,7 +1011,7 @@ const LineArt = (() => {
     };
   }
 
-  return { fromOperatorList, fromPdf, fromSvg, groups, colours, build, isMarker };
+  return { fromOperatorList, fromPdf, fromSvg, groups, colours, build, isMarker, soleDiff, mainTile };
 })();
 
 // ==== 鞋款: line drawings become studio styles in styles/<id>.json (the swatch site lists them, in order, in styles.json). ====
@@ -896,10 +1103,10 @@ $("artIn").addEventListener("change", async e => {
     else if (/<svg[\s>]/i.test(head) || /\.svg$/i.test(file.name)) pages = LineArt.fromSvg(new TextDecoder().decode(buf));
     else throw new Error("請選 PDF 或 SVG 檔。");
     const choices = [];
-    pages.forEach((pg, p) => LineArt.groups(pg).forEach(g => choices.push({ page: p, idx: g.idx })));
+    pages.forEach((pg, p) => LineArt.groups(pg).forEach(g => choices.push({ page: p, idx: g.idx, painted: g.painted })));
     if (!choices.length) throw new Error("這個檔案裡找不到線條或色塊。");
     art = { pages, choices, at: -1, skipped: pages.reduce((n, p) => n + p.skipped, 0), base: file.name.replace(/\.[^.]+$/, "") };
-    pickChoice(0);
+    pickChoice(Math.max(0, choices.findIndex(c => c.painted)));
     say($("artStatus"), "");
     $("artCard").hidden = false; $("artPick").hidden = true; $("artHow").hidden = true;
     $("artCard").scrollIntoView({ block: "start" });
@@ -919,16 +1126,17 @@ function pickChoice(i) {
   let L = 0;
   art.cols.forEach(col => { art.map[col.hex] = col.marker && L < LETTERS.length ? LETTERS[L++] : ""; });
   art.showAll = false;
-  art.active = null; art.fills = {}; art.opts = optsOf({});
+  art.active = null; art.fills = {}; art.opts = optsOf({}); art.sole = { on: {}, names: {}, view: -1 };
   if (art.choices.length > 1) $("artName").value = "";
   else if (!$("artName").value) $("artName").value = art.base;
   renderArt();
 }
 const usedParts = () => LETTERS.filter(l => Object.values(art.map).includes(l));
 const partName = l => art.names[l] ?? (DEFAULT_PART[l] || "Part " + l.toUpperCase());
-function currentStyle() {
+// src: { page, idx } to build another drawing with the same parts (a sole option); the chosen drawing by default.
+function currentStyle(src) {
   const c = art.choices[art.at];
-  return LineArt.build(art.pages[c.page], c.idx, Object.fromEntries(Object.entries(art.map).filter(([, v]) => v)),
+  return LineArt.build(src ? src.page : art.pages[c.page], src ? src.idx : c.idx, Object.fromEntries(Object.entries(art.map).filter(([, v]) => v)),
     { name: cleanName($("artName").value) || "（未命名）", parts: Object.fromEntries(usedParts().map(l => [l, partName(l).trim() || l.toUpperCase()])) });
 }
 
@@ -959,11 +1167,78 @@ function renderArt() {
   if (!parts.length) w.push("還沒有可換色的部位：請把至少一種顏色設成部位。");
   if (art.skipped) w.push(`有 ${art.skipped} 個物件（文字、圖片或漸層）無法使用，已略過。文字請先「建立外框」再存檔。`);
   $("artWarn").hidden = !w.length; $("artWarn").textContent = w.join(" ");
+  renderSoles();
   renderArtOpts();
   renderArtPreview();
 }
+
+// ---- 鞋底選項: other drawings of the same shoe in the file (same page) where only the sole is different. ----
+const partCols = () => new Set(Object.entries(art.map).filter(([, v]) => v).map(([h]) => h));
+const soleOthers = () => art.choices.map((c, k) => k).filter(k => k !== art.at && art.choices[k].page === art.choices[art.at].page);
+function soleDiffOf(k) {
+  const cols = partCols(), key = art.at + "|" + k + "|" + [...cols].sort().join();
+  art.diffs ||= new Map();
+  if (!art.diffs.has(key)) {
+    const c = art.choices[art.at];
+    let d = null;
+    try { d = LineArt.soleDiff(art.pages[c.page], c.idx, art.choices[k].idx, cols); } catch (err) { console.error(err); }
+    art.diffs.set(key, d);
+  }
+  return art.diffs.get(key);
+}
+const mainSoleTile = () => { const c = art.choices[art.at]; return LineArt.mainTile(art.pages[c.page], c.idx, partCols()); };
+const tileCss = t => t ? `background:linear-gradient(#efe9e2 0 45%,${t[0]} 45% 53%,${t[1]} 53% 80%,${t[2]} 80%)` : "";
+// The soles to publish, the drawing's own first; none unless another drawing is ticked.
+function soleList() {
+  const on = soleOthers().filter(k => art.sole.on[k] && soleDiffOf(k));
+  if (!on.length) return [];
+  const nm = k => cleanName(art.sole.names[k] || "");
+  return [{ k: -1, name: nm(-1), tile: mainSoleTile() }, ...on.map(k => ({ k, name: nm(k), tile: soleDiffOf(k).tile, diff: soleDiffOf(k) }))];
+}
+function solesData() {
+  return soleList().map(s => {
+    const out = { name: s.name, map: (s.diff && s.diff.map) || {}, ...(s.tile ? { tile: s.tile } : {}) };
+    if (s.diff && s.diff.page) { const v = currentStyle(s.diff); out.style = { items: v.items, defs: v.defs, bb: v.bb, viewBox: v.viewBox }; }
+    return out;
+  });
+}
+function renderSoles() {
+  const others = soleOthers();
+  $("soleWrap").hidden = !others.length;
+  if (!others.length) return;
+  const anyOn = others.some(k => art.sole.on[k] && soleDiffOf(k));
+  const row = (k, chip, label, ok) => `<div class="sole-row${ok ? "" : " off"}"><span class="chip" style="${chip}"></span>${label}` +
+    `<input class="field" data-solename="${k}" maxlength="20" value="${esc(art.sole.names[k] || "")}" placeholder="${k < 0 ? "例如：Coffee" : "例如：Beige"}"${ok ? "" : " disabled"}></div>`;
+  $("soleRows").innerHTML = row(-1, tileCss(mainSoleTile()), `<span>這雙的鞋底</span>`, anyOn) + others.map(k => {
+    const d = soleDiffOf(k);
+    return d ? row(k, tileCss(d.tile), `<label class="check"><input type="checkbox" data-soleon="${k}"${art.sole.on[k] ? " checked" : ""}>第 ${k + 1} 個</label>`, !!art.sole.on[k])
+      : `<div class="sole-row off"><span class="chip"></span><span>第 ${k + 1} 個</span><span class="small">跟這雙對不上，不能當鞋底</span></div>`;
+  }).join("");
+  $("soleNote").textContent = anyOn ? "客人在網站上可以選這些鞋底，第一個是預設。" : "勾選檔案裡只換了鞋底的同一雙鞋，就會變成鞋底選項。";
+  renderSoleView();
+}
+function renderSoleView() {
+  const list = soleList();
+  if (!list.some(s => s.k === art.sole.view)) art.sole.view = -1;
+  $("soleView").hidden = !list.length;
+  $("soleView").innerHTML = list.map(s => `<button type="button" data-soleview="${s.k}" aria-pressed="${s.k === art.sole.view}"><span class="chip" style="${tileCss(s.tile)}"></span>${esc(s.name || (s.k < 0 ? "這雙的鞋底" : `第 ${s.k + 1} 個`))}</button>`).join("");
+}
+$("soleRows").addEventListener("change", e => {
+  const c = e.target.closest("[data-soleon]");
+  if (!c) return;
+  const k = +c.dataset.soleon;
+  art.sole.on[k] = c.checked;
+  if (c.checked) art.sole.view = k;
+  renderSoles(); renderArtPreview();
+});
+$("soleRows").addEventListener("input", e => { const i = e.target.closest("[data-solename]"); if (i) { art.sole.names[i.dataset.solename] = i.value; renderSoleView(); } });
+$("soleView").addEventListener("click", e => { const b = e.target.closest("[data-soleview]"); if (b) { art.sole.view = +b.dataset.soleview; renderSoleView(); renderArtPreview(); } });
+const recolour = (str, map) => str.replace(/fill="(#[0-9a-f]{6})"/g, (m, h) => map[h] ? `fill="${map[h]}"` : m);
 function renderArtPreview() {
-  const st = currentStyle(), parts = Object.keys(st.parts);
+  let st = currentStyle();
+  const parts = Object.keys(st.parts), sole = art.sole.view >= 0 && art.sole.on[art.sole.view] ? soleDiffOf(art.sole.view) : null;
+  if (sole && sole.map) st = { ...st, items: st.items.map(it => typeof it === "string" ? recolour(it, sole.map) : it) };
+  else if (sole) { const v = currentStyle(sole); st = { ...st, items: v.items, defs: v.defs, bb: v.bb, viewBox: v.viewBox }; }
   if (art.active && !parts.includes(art.active)) art.active = null;
   const fills = Object.fromEntries(parts.map(l => [l, art.fills[l] ?? TRY[LETTERS.indexOf(l)]]));
   $("artPrev").setAttribute("viewBox", st.viewBox);
@@ -997,7 +1272,10 @@ $("artPublish").addEventListener("click", async () => {
   if (!Object.keys(st.parts).length) return say($("artStatus"), "請至少把一種顏色設成部位。", "bad");
   if (art.opts.lace && Object.keys(st.parts).length < 2) return say($("artStatus"), "鞋帶以外至少要有一個可換色的部位。", "bad");
   if (STYLE_LIST.some(s => s.name === name) || stPending.some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
-  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), added: new Date().toISOString() };
+  const soles = soleList();
+  if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、厚底）。", "bad");
+  if (new Set(soles.map(s => s.name)).size < soles.length) return say($("artStatus"), "鞋底的名字不能重複。", "bad");
+  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
   if (!token) {
     // Trial: it joins the list on this page only, so ordering and deleting can be tried too.
     STYLE_LIST.push({ id, ...body, trial: true }); trialList = true;
@@ -1051,7 +1329,7 @@ function renderStyleList() {
     const x = stMode === "delete" && !isNew && !gone ? `<button class="x" type="button" data-del="${s.id}" aria-label="刪除 ${esc(s.name)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
     const edit = stMode === "edit" && !isNew && !gone;
     const move = stMode === "order" && !isNew ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
-    const info = isNew ? "上架中…" : gone ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes);
+    const info = isNew ? "上架中…" : gone ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
     return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
   };
   $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
