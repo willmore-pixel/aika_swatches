@@ -1,5 +1,6 @@
 """Build the swatch site into _site/: every photo in leather/ and canvas/,
-cropped to a centre square, resized, and listed in swatches.json (the file name, minus extension, is the swatch's name)."""
+cropped to a centre square, resized, and listed in swatches.json (the file name, minus extension, is the swatch's name),
+plus the shoe styles in styles/, listed in styles.json."""
 import hashlib, json, shutil
 from pathlib import Path
 from PIL import Image, ImageOps
@@ -34,8 +35,30 @@ for kind in ("leather", "canvas"):
         img.save(OUT / name, quality=85)
         swatches.append({"name": src.stem, "kind": kind, "file": name})
 
-# The shop's upload page (快速色卡上架), served at /upload/.
+# Shoe styles (line drawings made into the studio's format by the upload page), one styles/<id>.json each.
+# styles/order.json lists ids in the order customers see them; any style it leaves out follows, oldest first.
+styles = []
+for src in sorted((ROOT / "styles").glob("*.json")):
+    if src.name == "order.json":
+        continue
+    try:
+        st = json.loads(src.read_text(encoding="utf-8"))
+        assert st["items"] and st["parts"] and st["viewBox"]
+    except Exception as e:
+        print(f"skipped {src.name}: {e}")
+        continue
+    styles.append({"id": src.stem, **st})
+try:
+    order = json.loads((ROOT / "styles" / "order.json").read_text(encoding="utf-8"))
+except Exception:
+    order = []
+rank = {k: i for i, k in enumerate(order)}
+styles.sort(key=lambda s: (rank.get(s["id"], len(rank)), s.get("added", ""), s["id"]))
+(OUT / "styles.json").write_text(json.dumps(styles, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+# The shop's upload pages: 色卡 at /upload/, 鞋款 at /style-upload/ (kept apart while the shop tries the second one out).
 shutil.copytree(ROOT / "upload", OUT / "upload")
+shutil.copytree(ROOT / "style-upload", OUT / "style-upload")
 
 (OUT / "swatches.json").write_text(json.dumps(swatches, ensure_ascii=False, indent=1), encoding="utf-8")
-print(f"{len(swatches)} swatches")
+print(f"{len(swatches)} swatches, {len(styles)} styles")
