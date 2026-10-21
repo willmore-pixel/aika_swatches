@@ -809,7 +809,7 @@ const LineArt = (() => {
 
 // ==== 鞋款: line drawings become studio styles in styles/<id>.json (the swatch site lists them, in order, in styles.json). ====
 const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
-const LETTERS = ["a", "b", "c", "d", "e", "f"];
+const LETTERS = ["a", "b", "c", "d", "e", "f", "g"];
 const DEFAULT_PART = { a: "Front", b: "Rear" };
 // Sizes the studio can offer (EU). Each style keeps the range it is made in: sizes = { women: [from, to], men: [from, to] },
 // leaving out a line it isn't made for. lace = the part that is the laces (customers pick a lace colour for it).
@@ -851,7 +851,7 @@ function optsChange(e, o, parts) {
   return true;
 }
 // Each part shows in its own colour on the preview, so it is easy to check which area went where.
-const TRY = ["#C8323C", "#1F2A44", "#2F5D46", "#C9A85A", "#7B2638", "#B9824F"];
+const TRY = ["#C8323C", "#1F2A44", "#2F5D46", "#C9A85A", "#7B2638", "#B9824F", "#6B4A35"];
 const TRY_MORE = ["#FFFFFF", "#F7F2E6", "#C19A6B", "#9A4E24", "#1C1C1E", "#B9B8B4", "#F4C7C3", "#6B6B2E"];
 
 // The studio's drawing code: each painted area is filled with the chosen colour, clipped to its exact shape, lines on top.
