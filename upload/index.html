@@ -924,16 +924,42 @@ const LineArt = (() => {
       const shapes = M.map(i => S[i]).map(s => s.fill && map[s.fill] ? { ...s, fill: map[s.fill] } : s);
       return { map, tile: soleTile(shapes, new Set(Object.values(map)), midY) };
     }
-    // Otherwise a drawing with the new sole: each added shape goes after the shape that comes before it in the other drawing.
+    // Otherwise a drawing with the new sole. The old sole's shapes are grouped by where they overlap (one group per
+    // view); each group's new shapes go where the group's top shape was, so they sit as deep as the old sole did.
+    // Under them, the old sole's area (outline included) is painted white first: what the old sole used to hide
+    // (the bottom of the upper, its stitching) must stay hidden where the new sole leaves a gap, as under a thick
+    // sole's arch. That white is cut out wherever the other drawing has something, so the upper is never painted over.
     const after = new Map();
+    const hits = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    const push = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+    const groupsAt = new Map(), lastOf = new Map();
+    for (const mi of M) if (removed.has(mi)) push(groupsAt, M.find(q => removed.has(q) && hits(S[q].bb, S[mi].bb)), mi);
+    for (const list of groupsAt.values()) list.forEach(mi => lastOf.set(mi, list[list.length - 1]));
+    const tf = (s, dx, dy) => (dx || dy ? `translate(${num(dx)} ${num(dy)})` : "") + (s.t ? (dx || dy ? " " : "") + s.t : "");
+    const pathAttr = (s, t) => `d="${s.d}"${t ? ` transform="${t}"` : ""}`;
+    let nMask = 0;
+    for (const list of groupsAt.values()) {
+      const R = EMPTY();
+      list.forEach(mi => { grow(R, S[mi].bb[0], S[mi].bb[1]); grow(R, S[mi].bb[2], S[mi].bb[3]); });
+      R[0] -= 6; R[1] -= 6; R[2] += 6; R[3] += 6;
+      const cut = V.map(vi => {
+        const v = S[vi], [dx, dy] = offFor(vi), b = [v.bb[0] + dx, v.bb[1] + dy, v.bb[2] + dx, v.bb[3] + dy];
+        if (!hits(b, R) || !v.fill) return "";
+        return `<path ${pathAttr(v, tf(v, dx, dy))} fill="#000"${v.rule === "evenodd" ? ` fill-rule="evenodd"` : ""}/>`;
+      }).join("");
+      const id = `__P__-sole${nMask++}`, box = `x="${num(R[0])}" y="${num(R[1])}" width="${num(R[2] - R[0])}" height="${num(R[3] - R[1])}"`;
+      const white = list.map(mi => `<path ${pathAttr(S[mi], S[mi].t)} fill="#ffffff" stroke="#ffffff" stroke-width="${num(Math.max(S[mi].stroke ? S[mi].sw + 1.5 : 0, 5))}" stroke-linejoin="round"/>`).join("");
+      push(after, list[list.length - 1], { raw: `<defs><mask id="${id}" maskUnits="userSpaceOnUse" ${box}><rect ${box} fill="#fff"/>${cut}</mask></defs><g mask="url(#${id})">${white}</g>`, bb: R, clip: null });
+    }
+    // A new shape that covers no old sole shape goes after the shape that comes before it in the other drawing.
     let anchor = -1;
     for (const vi of V) {
       if (pair.has(vi)) { anchor = pair.get(vi); continue; }
       if (!added.includes(vi)) continue;
       const [dx, dy] = offFor(vi), s = S[vi];
-      const moved = { ...s, t: `translate(${num(dx)} ${num(dy)})` + (s.t ? " " + s.t : ""), clip: null, bb: [s.bb[0] + dx, s.bb[1] + dy, s.bb[2] + dx, s.bb[3] + dy] };
-      if (!after.has(anchor)) after.set(anchor, []);
-      after.get(anchor).push(moved);
+      const moved = { ...s, t: tf(s, dx, dy), clip: null, bb: [s.bb[0] + dx, s.bb[1] + dy, s.bb[2] + dx, s.bb[3] + dy] };
+      const old = M.find(mi => removed.has(mi) && hits(S[mi].bb, moved.bb));
+      push(after, old !== undefined ? lastOf.get(old) : anchor, moved);
     }
     const shapes = [...(after.get(-1) || [])];
     for (const mi of M) {
@@ -963,7 +989,7 @@ const LineArt = (() => {
   // the studio swaps __P__ for a prefix of its own so several drawings can share a page.
   function build(page, idx, map, { name, parts, cm = 26 }) {
     const items = [], used = new Set(), bb = EMPTY();
-    page.shapes.forEach((s, i) => { if (idx.has(i)) { grow(bb, s.bb[0], s.bb[1]); grow(bb, s.bb[2], s.bb[3]); } });
+    page.shapes.forEach((s, i) => { if (idx.has(i) && !s.raw) { grow(bb, s.bb[0], s.bb[1]); grow(bb, s.bb[2], s.bb[3]); } });
     // A plain rectangle clip that holds the whole drawing changes nothing, so it is dropped.
     const clipOf = id => {
       while (id) {
@@ -990,6 +1016,7 @@ const LineArt = (() => {
     const addStr = (str, clip) => { if (clip !== runClip) { flush(); runClip = clip; } run += str; };
     page.shapes.forEach((s, i) => {
       if (!idx.has(i)) return;
+      if (s.raw) return addStr(s.raw, null);  // ready-made markup (a sole option's cover-up)
       const clip = clipOf(s.clip), part = s.fill && map[s.fill];
       if (clip) used.add(clip);
       if (part) {
