@@ -9,5 +9,5 @@
 
 ## 鞋款 Styles
 
-- 在上架頁 https://willmore-pixel.github.io/aika_swatches/upload/#styles 的「鞋款」分頁上傳線稿（PDF 或 SVG）。可以換色的部位要塗上鮮豔的顏色，一種顏色就是一個部位。
+- 在鞋款上架頁 https://willmore-pixel.github.io/aika_swatches/style-upload/ 上傳線稿（PDF 或 SVG，可一次選幾個檔案；只換鞋底的同一雙鞋可以設成鞋底選項）。可以換色的部位要塗上鮮豔的顏色，一種顏色就是一個部位。
 - 每個鞋款存成 `styles/<id>.json`；`styles/order.json` 是網站上的順序。上架頁可以調整順序和刪除，不用動這些檔案。
