@@ -101,6 +101,17 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .st-card .move button { padding: 6px; border-radius: 10px; border: 2px solid var(--line); font-weight: 900; }
 .st-card .move button:disabled { opacity: .3; }
 .heads { display: flex; gap: 14px; }
+/* Per-style settings: size ranges (women / men) and whether the shoe has laces. */
+.opt-row { display: grid; grid-template-columns: 92px 1fr auto 1fr; gap: 8px; align-items: center; }
+.opt-row + .opt-row { margin-top: 8px; }
+.opt-row.lace { grid-template-columns: 92px auto 1fr; }
+.opt-row span { font-size: 14px; font-weight: 800; color: var(--muted); }
+.opt-row select.field { padding: 9px 26px 9px 10px; }
+.opt-row select:disabled { opacity: .35; }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.opts { display: grid; gap: 14px; }
+.st-card.editing { border-color: var(--accent); }
 
 /* Camera and crop view: copied from the studio (30 cm square guide with a cm ruler; only the square is kept). */
 .cam { position: fixed; inset: 0; z-index: 20; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -201,6 +212,7 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
           <span class="label">部位名稱（客人看到的名字）</span>
           <div id="nameRows"></div>
         </div>
+        <div class="opts" id="artOpts"></div>
         <div>
           <span class="label">鞋款名稱</span>
           <input class="field" id="artName" type="text" maxlength="40" placeholder="例如：Loafer" enterkeyhint="done">
@@ -213,9 +225,14 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
       </div>
       <p class="status" id="artStatus"></p>
 
-      <div class="list-head"><h2>目前的鞋款</h2><div class="heads"><button class="link-btn" id="orderStyles" type="button">調整順序</button><button class="link-btn" id="delStyles" type="button">刪除</button></div></div>
+      <div class="list-head"><h2>目前的鞋款</h2><div class="heads"><button class="link-btn" id="editStyles" type="button">設定</button><button class="link-btn" id="orderStyles" type="button">調整順序</button><button class="link-btn" id="delStyles" type="button">刪除</button></div></div>
       <p class="status" id="stListStatus"></p>
       <div class="st-list" id="stList"></div>
+      <div class="card" id="stEdit" hidden>
+        <h2 id="stEditName" style="margin:0;font-size:17px"></h2>
+        <div class="opts" id="stEditOpts"></div>
+        <div class="row"><button class="btn" id="stEditCancel" type="button">取消</button><button class="btn primary" id="stEditSave" type="button">儲存設定</button></div>
+      </div>
       <div class="row" id="orderBar" hidden><button class="btn" id="orderCancel" type="button">取消</button><button class="btn primary" id="orderSave" type="button">儲存順序</button></div>
       <p class="small" id="stListNote"></p>
     </section>
@@ -794,6 +811,45 @@ const LineArt = (() => {
 const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
 const LETTERS = ["a", "b", "c", "d", "e", "f"];
 const DEFAULT_PART = { a: "Front", b: "Rear" };
+// Sizes the studio can offer (EU). Each style keeps the range it is made in: sizes = { women: [from, to], men: [from, to] },
+// leaving out a line it isn't made for. lace = the part that is the laces (customers pick a lace colour for it).
+const SIZE_LIST = { women: ["34.5","35","35.5","36","36.5","37","37.5","38","38.5","39","39.5","40","40.5","41","41.5","42"],
+                    men: ["38.5","39","39.5","40","40.5","41","41.5","42","42.5","43","43.5","44","44.5","45"] };
+const SIZE_ZH = { women: "女款", men: "男款" };
+const fullSizes = () => Object.fromEntries(Object.entries(SIZE_LIST).map(([g, l]) => [g, [l[0], l[l.length - 1]]]));
+const optsOf = st => ({ sizes: st.sizes ? structuredClone(st.sizes) : fullSizes(), lace: st.lace || "" });
+const sizeText = sz => Object.entries(sz || fullSizes()).map(([g, [a, b]]) => `${SIZE_ZH[g]} ${a}–${b}`).join("・");
+function optsHtml(o, parts) {
+  const sizes = Object.entries(SIZE_LIST).map(([g, list]) => {
+    const r = o.sizes[g], pick = cur => list.map(v => `<option${v === cur ? " selected" : ""}>${v}</option>`).join("");
+    return `<div class="opt-row"><label class="check"><input type="checkbox" data-g="${g}"${r ? " checked" : ""}>${SIZE_ZH[g]}</label>` +
+      `<select class="field" data-g="${g}" data-end="0" aria-label="${SIZE_ZH[g]}最小尺寸"${r ? "" : " disabled"}>${pick(r ? r[0] : list[0])}</select><span>到</span>` +
+      `<select class="field" data-g="${g}" data-end="1" aria-label="${SIZE_ZH[g]}最大尺寸"${r ? "" : " disabled"}>${pick(r ? r[1] : list[list.length - 1])}</select></div>`;
+  }).join("");
+  const keys = Object.keys(parts);
+  const lace = `<div class="opt-row lace"><label class="check"><input type="checkbox" data-lace${o.lace ? " checked" : ""}${keys.length > 1 || o.lace ? "" : " disabled"}>有鞋帶</label>` +
+    (o.lace ? `<span>鞋帶是</span><select class="field" data-lacepart aria-label="鞋帶是哪個部位">${keys.map(l => `<option value="${l}"${l === o.lace ? " selected" : ""}>部位 ${l.toUpperCase()}（${esc(parts[l])}）</option>`).join("")}</select>` : "") + `</div>` +
+    `<p class="small">${o.lace ? "這個部位在網站上換成「選擇鞋帶」，不會出現在 L / R 的配色裡。" : keys.length > 1 ? "有鞋帶的話，在線稿上把鞋帶塗成一個部位，再勾「有鞋帶」選是哪個部位。" : "有鞋帶的話，在線稿上把鞋帶也塗成一個部位（至少要有兩個部位）。"}</p>`;
+  return `<div><span class="label">尺寸範圍</span>${sizes}</div><div><span class="label">鞋帶</span>${lace}</div>`;
+}
+// One change in a settings block; returns false when the change was refused (it is put back).
+function optsChange(e, o, parts) {
+  const t = e.target;
+  if (t.matches("input[data-g]")) {
+    const g = t.dataset.g, list = SIZE_LIST[g];
+    if (t.checked) o.sizes[g] = [list[0], list[list.length - 1]];
+    else if (Object.keys(o.sizes).length > 1) delete o.sizes[g];
+    else { t.checked = true; return false; }
+  } else if (t.matches("select[data-g]")) {
+    const r = o.sizes[t.dataset.g], list = SIZE_LIST[t.dataset.g];
+    r[+t.dataset.end] = t.value;
+    if (list.indexOf(r[0]) > list.indexOf(r[1])) r.reverse();
+  } else if (t.matches("[data-lace]")) {
+    const keys = Object.keys(parts);
+    o.lace = t.checked ? keys[keys.length - 1] : "";
+  } else if (t.matches("[data-lacepart]")) o.lace = t.value;
+  return true;
+}
 // Each part shows in its own colour on the preview, so it is easy to check which area went where.
 const TRY = ["#C8323C", "#1F2A44", "#2F5D46", "#C9A85A", "#7B2638", "#B9824F"];
 const TRY_MORE = ["#FFFFFF", "#F7F2E6", "#C19A6B", "#9A4E24", "#1C1C1E", "#B9B8B4", "#F4C7C3", "#6B6B2E"];
@@ -863,7 +919,7 @@ function pickChoice(i) {
   let L = 0;
   art.cols.forEach(col => { art.map[col.hex] = col.marker && L < LETTERS.length ? LETTERS[L++] : ""; });
   art.showAll = false;
-  art.active = null; art.fills = {};
+  art.active = null; art.fills = {}; art.opts = optsOf({});
   if (art.choices.length > 1) $("artName").value = "";
   else if (!$("artName").value) $("artName").value = art.base;
   renderArt();
@@ -903,6 +959,7 @@ function renderArt() {
   if (!parts.length) w.push("還沒有可換色的部位：請把至少一種顏色設成部位。");
   if (art.skipped) w.push(`有 ${art.skipped} 個物件（文字、圖片或漸層）無法使用，已略過。文字請先「建立外框」再存檔。`);
   $("artWarn").hidden = !w.length; $("artWarn").textContent = w.join(" ");
+  renderArtOpts();
   renderArtPreview();
 }
 function renderArtPreview() {
@@ -916,10 +973,17 @@ function renderArtPreview() {
   const cur = art.active && fills[art.active];
   $("artDots").innerHTML = [...TRY, ...TRY_MORE].map(h => `<button type="button" data-c="${h}" style="background:${h}" aria-label="${h}" aria-pressed="${!!cur && cur.toLowerCase() === h.toLowerCase()}"></button>`).join("");
 }
+function renderArtOpts() {
+  const parts = currentStyle().parts;
+  if (art.opts.lace && !parts[art.opts.lace]) art.opts.lace = "";
+  $("artOpts").innerHTML = optsHtml(art.opts, parts);
+}
+$("artOpts").addEventListener("change", e => { if (art) { optsChange(e, art.opts, currentStyle().parts); renderArtOpts(); } });
 $("choices").addEventListener("click", e => { const b = e.target.closest("[data-ch]"); if (b) pickChoice(+b.dataset.ch); });
 $("mapRows").addEventListener("change", e => { const s = e.target.closest("[data-hex]"); if (s) { art.map[s.dataset.hex] = s.value; renderArt(); } });
 $("moreCols").addEventListener("click", () => { art.showAll = !art.showAll; renderArt(); });
 $("nameRows").addEventListener("input", e => { const i = e.target.closest("[data-name]"); if (i) { art.names[i.dataset.name] = i.value; renderArtPreview(); } });
+$("nameRows").addEventListener("change", () => art && renderArtOpts());
 $("artParts").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b) { art.active = art.active === b.dataset.p ? null : b.dataset.p; renderArtPreview(); } });
 $("artPrev").addEventListener("click", e => { const p = e.target.dataset && e.target.dataset.part; art.active = p && p !== art.active ? p : null; renderArtPreview(); });
 $("artDots").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (b && art.active) { art.fills[art.active] = b.dataset.c; renderArtPreview(); } });
@@ -931,8 +995,9 @@ $("artPublish").addEventListener("click", async () => {
   if (!name) { $("artName").focus(); return say($("artStatus"), "請先輸入鞋款名稱。", "bad"); }
   const st = currentStyle();
   if (!Object.keys(st.parts).length) return say($("artStatus"), "請至少把一種顏色設成部位。", "bad");
+  if (art.opts.lace && Object.keys(st.parts).length < 2) return say($("artStatus"), "鞋帶以外至少要有一個可換色的部位。", "bad");
   if (STYLE_LIST.some(s => s.name === name) || stPending.some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
-  const id = "s" + Date.now().toString(36), body = { ...st, added: new Date().toISOString() };
+  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), added: new Date().toISOString() };
   if (!token) {
     // Trial: it joins the list on this page only, so ordering and deleting can be tried too.
     STYLE_LIST.push({ id, ...body, trial: true }); trialList = true;
@@ -971,6 +1036,10 @@ async function loadStyles() {
     say($("artStatus"), `「${stPending[i].name}」已上架 ✓ 客人重新整理網站就看得到。`, "ok");
     stPending.splice(i, 1);
   }
+  for (const [id, want] of [...stSaving]) {
+    const s = STYLE_LIST.find(x => x.id === id);
+    if (!s || JSON.stringify([s.sizes, s.lace || ""]) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
+  }
   for (const id of [...stRemoving]) if (!STYLE_LIST.some(s => s.id === id)) { stRemoving.delete(id); say($("stListStatus"), "已從網站下架 ✓", "ok"); }
   if (orderSaving && orderSaving.every((id, i) => STYLE_LIST.filter(s => orderSaving.includes(s.id))[i]?.id === id)) { orderSaving = null; say($("stListStatus"), "新的順序已上線 ✓", "ok"); }
   renderStyleList();
@@ -980,24 +1049,67 @@ function renderStyleList() {
   const card = (s, i, isNew) => {
     const gone = stRemoving.has(s.id), armed = stArmed === s.id;
     const x = stMode === "delete" && !isNew && !gone ? `<button class="x" type="button" data-del="${s.id}" aria-label="刪除 ${esc(s.name)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
+    const edit = stMode === "edit" && !isNew && !gone;
     const move = stMode === "order" && !isNew ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
-    return `<div class="st-card${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${isNew ? "上架中…" : gone ? "下架中…" : Object.values(s.parts).map(esc).join("・")}${s.trial ? "（試用）" : ""}</small>${move}</div>`;
+    const info = isNew ? "上架中…" : gone ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes);
+    return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
   };
   $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
   $("orderBar").hidden = stMode !== "order";
   $("orderStyles").textContent = stMode === "order" ? "取消" : "調整順序";
   $("delStyles").textContent = stMode === "delete" ? "完成" : "刪除";
+  $("editStyles").textContent = stMode === "edit" ? "完成" : "設定";
   if (!list.length && !stPending.length && !$("stListNote").textContent) $("stListNote").textContent = "還沒有鞋款。";
 }
+// ---- 設定: change an uploaded style's size range and laces (rewrites its styles/<id>.json). ----
+let stEditing = null;  // { id, name, parts, opts }
+const stSaving = new Map();  // id -> settings sent, until the site shows them
+$("editStyles").addEventListener("click", () => {
+  stMode = stMode === "edit" ? "" : "edit"; stArmed = null; newOrder = null; closeStEdit();
+  say($("stListStatus"), stMode === "edit" ? "點一個鞋款，改它的尺寸範圍和鞋帶。" : "", "wait");
+  renderStyleList();
+});
+function closeStEdit() { stEditing = null; $("stEdit").hidden = true; }
+function renderStEdit() {
+  $("stEdit").hidden = !stEditing;
+  if (!stEditing) return;
+  $("stEditName").textContent = stEditing.name;
+  $("stEditOpts").innerHTML = optsHtml(stEditing.opts, stEditing.parts);
+}
+$("stEditOpts").addEventListener("change", e => { if (stEditing) { optsChange(e, stEditing.opts, stEditing.parts); renderStEdit(); } });
+$("stEditCancel").addEventListener("click", () => { closeStEdit(); renderStyleList(); });
+$("stEditSave").addEventListener("click", async () => {
+  const ed = stEditing; if (!ed) return;
+  const apply = st => { st.sizes = ed.opts.sizes; if (ed.opts.lace) st.lace = ed.opts.lace; else delete st.lace; return st; };
+  if (!token) {
+    apply(STYLE_LIST.find(s => s.id === ed.id)); trialList = true; closeStEdit(); renderStyleList();
+    return say($("stListStatus"), `試用模式：正式使用時，「${ed.name}」的設定會更新到網站。這次沒有改（只在這頁試用）。`, "wait");
+  }
+  $("stEditSave").disabled = true;
+  say($("stListStatus"), "儲存中…", "wait");
+  try {
+    const f = await gh(`/contents/styles/${ed.id}.json`);
+    if (!f.ok) throw new Error(f.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `鞋款庫裡找不到「${ed.name}」。`);
+    const file = await f.json();
+    const st = apply(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), c => c.charCodeAt(0)))));
+    const r = await gh(`/contents/styles/${ed.id}.json`, { method: "PUT", body: { message: `Update style settings ${ed.name}`, content: b64utf8(JSON.stringify(st)), sha: file.sha } });
+    if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
+    stSaving.set(ed.id, JSON.stringify([st.sizes, st.lace || ""]));
+    closeStEdit(); renderStyleList();
+    say($("stListStatus"), `「${ed.name}」的設定已儲存，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchStyles();
+  } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
+  finally { $("stEditSave").disabled = false; }
+});
 $("orderStyles").addEventListener("click", () => {
-  stMode = stMode === "order" ? "" : "order"; stArmed = null;
+  stMode = stMode === "order" ? "" : "order"; stArmed = null; closeStEdit();
   newOrder = stMode === "order" ? STYLE_LIST.map(s => s.id) : null;
   say($("stListStatus"), stMode === "order" ? "用 ◀ ▶ 移動，排好後按「儲存順序」。網站上的鞋款會照這個順序排。" : "", "wait");
   renderStyleList();
 });
 $("orderCancel").addEventListener("click", () => { stMode = ""; newOrder = null; say($("stListStatus"), ""); renderStyleList(); });
 $("delStyles").addEventListener("click", () => {
-  stMode = stMode === "delete" ? "" : "delete"; stArmed = null; newOrder = null;
+  stMode = stMode === "delete" ? "" : "delete"; stArmed = null; newOrder = null; closeStEdit();
   say($("stListStatus"), stMode === "delete" ? "按鞋款右上角的 ×，再按一次確認，就會從網站下架。" : "", "wait");
   renderStyleList();
 });
@@ -1022,6 +1134,14 @@ $("orderSave").addEventListener("click", async () => {
   } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
 });
 $("stList").addEventListener("click", async e => {
+  const ed = e.target.closest("[data-edit]");
+  if (ed) {
+    const s = STYLE_LIST.find(x => x.id === ed.dataset.edit);
+    stEditing = stEditing && stEditing.id === s.id ? null : { id: s.id, name: s.name, parts: s.parts, opts: optsOf(s) };
+    renderStyleList(); renderStEdit();
+    if (stEditing) $("stEdit").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
   const mv = e.target.closest("[data-mv]");
   if (mv) {
     const i = +mv.dataset.mv, j = i + +mv.dataset.d;
@@ -1054,7 +1174,7 @@ function watchStyles() {
   let tries = 0;
   stWatch = setInterval(async () => {
     await loadStyles();
-    if (!stPending.length && !stRemoving.size && !orderSaving) clearInterval(stWatch);
+    if (!stPending.length && !stRemoving.size && !orderSaving && !stSaving.size) clearInterval(stWatch);
     else if (++tries > 40) { clearInterval(stWatch); say($("stListStatus"), "已送出，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }
