@@ -56,8 +56,9 @@ rank = {k: i for i, k in enumerate(order)}
 styles.sort(key=lambda s: (rank.get(s["id"], len(rank)), s.get("added", ""), s["id"]))
 (OUT / "styles.json").write_text(json.dumps(styles, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
-# The shop's upload page (快速上架: 色卡 and 鞋款), served at /upload/.
+# The shop's upload pages: 色卡 at /upload/, 鞋款 at /style-upload/ (kept apart while the shop tries the second one out).
 shutil.copytree(ROOT / "upload", OUT / "upload")
+shutil.copytree(ROOT / "style-upload", OUT / "style-upload")
 
 (OUT / "swatches.json").write_text(json.dumps(swatches, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"{len(swatches)} swatches, {len(styles)} styles")
