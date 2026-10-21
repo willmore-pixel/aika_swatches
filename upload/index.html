@@ -113,7 +113,8 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .opts { display: grid; gap: 14px; }
 .st-card.editing { border-color: var(--accent); }
 /* Sole options: the main drawing's own sole, then other drawings of the same shoe with another sole. */
-.sole-row { display: grid; grid-template-columns: 34px 112px 1fr; gap: 10px; align-items: center; }
+.sole-row { display: grid; grid-template-columns: 34px minmax(0, 128px) 1fr; gap: 10px; align-items: center; }
+.sole-row .check { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
 .sole-row + .sole-row { margin-top: 8px; }
 .sole-row > span:not(.chip) { font-size: 14px; font-weight: 800; color: var(--muted); }
 .sole-row .field { padding: 9px 12px; }
@@ -201,8 +202,8 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
     </section>
 
     <section id="tab-styles" style="display:grid;gap:16px" hidden>
-      <label class="big wide" id="artPick"><i>📄</i>選線稿檔（PDF 或 SVG）<input id="artIn" type="file" accept=".pdf,.svg,application/pdf,image/svg+xml"></label>
-      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。<br>同一雙鞋有不同鞋底的話，在同一個檔案裡再放一雙只換了鞋底的（不用上色），上架時就能設成鞋底選項。</p>
+      <label class="big wide" id="artPick"><i>📄</i>選線稿檔（PDF 或 SVG，可一次選幾個）<input id="artIn" type="file" multiple accept=".pdf,.svg,application/pdf,image/svg+xml"></label>
+      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。<br>同一雙鞋有不同鞋底的話，再畫幾雙只換了鞋底的（不用上色），放在同一個檔案裡或分成幾個檔案一起選都可以，上架時就能設成鞋底選項。</p>
 
       <div class="card" id="artCard" hidden>
         <div id="choiceWrap" hidden>
@@ -814,8 +815,10 @@ const LineArt = (() => {
   // Returns null when the two drawings can't be lined up, else
   // { map, tile } (same shapes, other colours) or { page, idx, tile } (a drawing with the new sole, for build()).
   // partCols: the main drawing's colours that are parts (they never count as sole).
-  function soleDiff(page, mainIdx, varIdx, partCols = new Set()) {
-    const S = page.shapes, M = [...mainIdx], V = [...varIdx];
+  // varPage: the page the other drawing is on, when it is another page or another file.
+  function soleDiff(page, mainIdx, varIdx, partCols = new Set(), varPage = page) {
+    const off = varPage === page ? 0 : page.shapes.length, S = off ? [...page.shapes, ...varPage.shapes] : page.shapes;
+    const both = { ...page, shapes: S }, M = [...mainIdx], V = [...varIdx].map(i => i + off);
     const kind = s => (s.fill ? 1 : 0) + (s.stroke ? 2 : 0);
     const w = s => s.bb[2] - s.bb[0], h = s => s.bb[3] - s.bb[1];
     // Offsets: every pair of same-sized shapes votes for how far apart they are.
@@ -861,7 +864,7 @@ const LineArt = (() => {
       return o;
     };
     const offFor = offIn(offV), offForM = offIn(offM);
-    const ms = soleColours(page, mainIdx, partCols), vs = soleColours(page, varIdx, partCols);
+    const ms = soleColours(both, mainIdx, partCols), vs = soleColours(both, new Set(V), partCols);
     // Same shape, other colour: a recolour (only the main drawing's sole colours change).
     const recol = new Map();  // main shape index → new fill
     for (const [vi, mi] of pair) {
@@ -1093,19 +1096,25 @@ async function loadPdfjs() {
   return pdfjs;
 }
 $("artIn").addEventListener("change", async e => {
-  const file = e.target.files[0]; e.target.value = "";
-  if (!file) return;
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
   say($("artStatus"), "讀取線稿中…", "wait");
   try {
-    const buf = await file.arrayBuffer(), head = new TextDecoder().decode(buf.slice(0, 1024));
-    let pages;
-    if (head.startsWith("%PDF") || /\.pdf$/i.test(file.name)) pages = await LineArt.fromPdf(buf, await loadPdfjs());
-    else if (/<svg[\s>]/i.test(head) || /\.svg$/i.test(file.name)) pages = LineArt.fromSvg(new TextDecoder().decode(buf));
-    else throw new Error("請選 PDF 或 SVG 檔。");
-    const choices = [];
-    pages.forEach((pg, p) => LineArt.groups(pg).forEach(g => choices.push({ page: p, idx: g.idx, painted: g.painted })));
+    // Several files can be chosen at once (one drawing per sole, say); their pages are read one after another.
+    const pages = [], choices = [];
+    for (const file of files) {
+      const buf = await file.arrayBuffer(), head = new TextDecoder().decode(buf.slice(0, 1024));
+      let got;
+      if (head.startsWith("%PDF") || /\.pdf$/i.test(file.name)) got = await LineArt.fromPdf(buf, await loadPdfjs());
+      else if (/<svg[\s>]/i.test(head) || /\.svg$/i.test(file.name)) got = LineArt.fromSvg(new TextDecoder().decode(buf));
+      else throw new Error(`「${file.name}」不是 PDF 或 SVG 檔。`);
+      const base = file.name.replace(/\.[^.]+$/, ""), mine = [];
+      got.forEach(pg => { LineArt.groups(pg).forEach(g => mine.push({ page: pages.length, idx: g.idx, painted: g.painted, base })); pages.push(pg); });
+      mine.forEach((c, i) => c.label = files.length < 2 ? `第 ${choices.length + i + 1} 個` : mine.length > 1 ? `${base} ${i + 1}` : base);
+      choices.push(...mine);
+    }
     if (!choices.length) throw new Error("這個檔案裡找不到線條或色塊。");
-    art = { pages, choices, at: -1, skipped: pages.reduce((n, p) => n + p.skipped, 0), base: file.name.replace(/\.[^.]+$/, "") };
+    art = { pages, choices, at: -1, skipped: pages.reduce((n, p) => n + p.skipped, 0), base: files[0].name.replace(/\.[^.]+$/, "") };
     pickChoice(Math.max(0, choices.findIndex(c => c.painted)));
     say($("artStatus"), "");
     $("artCard").hidden = false; $("artPick").hidden = true; $("artHow").hidden = true;
@@ -1127,8 +1136,8 @@ function pickChoice(i) {
   art.cols.forEach(col => { art.map[col.hex] = col.marker && L < LETTERS.length ? LETTERS[L++] : ""; });
   art.showAll = false;
   art.active = null; art.fills = {}; art.opts = optsOf({}); art.sole = { on: {}, names: {}, view: -1 };
-  if (art.choices.length > 1) $("artName").value = "";
-  else if (!$("artName").value) $("artName").value = art.base;
+  if (art.choices.length > 1 && art.pages.length < 2) $("artName").value = "";
+  else if (!$("artName").value || art.choices.some(x => x.base === $("artName").value)) $("artName").value = c.base;
   renderArt();
 }
 const usedParts = () => LETTERS.filter(l => Object.values(art.map).includes(l));
@@ -1144,10 +1153,10 @@ function renderArt() {
   // Several drawings: show each as drawn (original colours) to pick from.
   $("choiceWrap").hidden = art.choices.length < 2;
   if (art.choices.length > 1) {
-    $("choiceLabel").textContent = `這個檔案裡有 ${art.choices.length} 個鞋款，一次上架一個。選一個：`;
+    $("choiceLabel").textContent = `這裡有 ${art.choices.length} 個鞋款，一次上架一個。選有上色的那一個：`;
     $("choices").innerHTML = art.choices.map((c, i) => {
       const st = LineArt.build(art.pages[c.page], c.idx, {}, { name: "", parts: {} });
-      return `<button type="button" data-ch="${i}" aria-pressed="${i === art.at}"><div class="thumb"><svg viewBox="${st.viewBox}">${artMarkup(st, "ch" + i, {})}</svg></div>第 ${i + 1} 個</button>`;
+      return `<button type="button" data-ch="${i}" aria-pressed="${i === art.at}"><div class="thumb"><svg viewBox="${st.viewBox}">${artMarkup(st, "ch" + i, {})}</svg></div>${esc(c.label)}</button>`;
     }).join("");
   }
   // Colour → part.
@@ -1172,16 +1181,16 @@ function renderArt() {
   renderArtPreview();
 }
 
-// ---- 鞋底選項: other drawings of the same shoe in the file (same page) where only the sole is different. ----
+// ---- 鞋底選項: other drawings of the same shoe (in the file, or in other files chosen with it) where only the sole is different. ----
 const partCols = () => new Set(Object.entries(art.map).filter(([, v]) => v).map(([h]) => h));
-const soleOthers = () => art.choices.map((c, k) => k).filter(k => k !== art.at && art.choices[k].page === art.choices[art.at].page);
+const soleOthers = () => art.choices.map((c, k) => k).filter(k => k !== art.at);
 function soleDiffOf(k) {
   const cols = partCols(), key = art.at + "|" + k + "|" + [...cols].sort().join();
   art.diffs ||= new Map();
   if (!art.diffs.has(key)) {
     const c = art.choices[art.at];
     let d = null;
-    try { d = LineArt.soleDiff(art.pages[c.page], c.idx, art.choices[k].idx, cols); } catch (err) { console.error(err); }
+    try { d = LineArt.soleDiff(art.pages[c.page], c.idx, art.choices[k].idx, cols, art.pages[art.choices[k].page]); } catch (err) { console.error(err); }
     art.diffs.set(key, d);
   }
   return art.diffs.get(key);
@@ -1211,8 +1220,8 @@ function renderSoles() {
     `<input class="field" data-solename="${k}" maxlength="20" value="${esc(art.sole.names[k] || "")}" placeholder="${k < 0 ? "例如：Coffee" : "例如：Beige"}"${ok ? "" : " disabled"}></div>`;
   $("soleRows").innerHTML = row(-1, tileCss(mainSoleTile()), `<span>這雙的鞋底</span>`, anyOn) + others.map(k => {
     const d = soleDiffOf(k);
-    return d ? row(k, tileCss(d.tile), `<label class="check"><input type="checkbox" data-soleon="${k}"${art.sole.on[k] ? " checked" : ""}>第 ${k + 1} 個</label>`, !!art.sole.on[k])
-      : `<div class="sole-row off"><span class="chip"></span><span>第 ${k + 1} 個</span><span class="small">跟這雙對不上，不能當鞋底</span></div>`;
+    return d ? row(k, tileCss(d.tile), `<label class="check"><input type="checkbox" data-soleon="${k}"${art.sole.on[k] ? " checked" : ""}>${esc(art.choices[k].label)}</label>`, !!art.sole.on[k])
+      : `<div class="sole-row off"><span class="chip"></span><span>${esc(art.choices[k].label)}</span><span class="small">跟這雙對不上，不能當鞋底</span></div>`;
   }).join("");
   $("soleNote").textContent = anyOn ? "客人在網站上可以選這些鞋底，第一個是預設。" : "勾選檔案裡只換了鞋底的同一雙鞋，就會變成鞋底選項。";
   renderSoleView();
@@ -1221,7 +1230,7 @@ function renderSoleView() {
   const list = soleList();
   if (!list.some(s => s.k === art.sole.view)) art.sole.view = -1;
   $("soleView").hidden = !list.length;
-  $("soleView").innerHTML = list.map(s => `<button type="button" data-soleview="${s.k}" aria-pressed="${s.k === art.sole.view}"><span class="chip" style="${tileCss(s.tile)}"></span>${esc(s.name || (s.k < 0 ? "這雙的鞋底" : `第 ${s.k + 1} 個`))}</button>`).join("");
+  $("soleView").innerHTML = list.map(s => `<button type="button" data-soleview="${s.k}" aria-pressed="${s.k === art.sole.view}"><span class="chip" style="${tileCss(s.tile)}"></span>${esc(s.name || (s.k < 0 ? "這雙的鞋底" : art.choices[s.k].label))}</button>`).join("");
 }
 $("soleRows").addEventListener("change", e => {
   const c = e.target.closest("[data-soleon]");
