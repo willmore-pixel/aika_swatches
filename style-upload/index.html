@@ -208,7 +208,7 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 
     <section id="tab-styles" style="display:grid;gap:16px" hidden>
       <label class="big wide" id="artPick"><i>📄</i>選線稿檔（PDF 或 SVG，可一次選幾個）<input id="artIn" type="file" multiple accept=".pdf,.svg,application/pdf,image/svg+xml"></label>
-      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。<br>同一雙鞋有不同鞋底的話，再畫幾雙只換了鞋底的（不用上色），放在同一個檔案裡或分成幾個檔案一起選都可以，上架時就能設成鞋底選項。</p>
+      <p class="small" id="artHow">在 Illustrator 裡把可以換色的部位塗上鮮豔的顏色（紅、黃、綠、藍…），一種顏色就是一個部位，例如紅色＝前片、黃色＝後片。沒塗色的地方在網站上是白色；鞋底等其他顏色照原圖。上下兩個視圖用同樣的顏色就會算同一個部位。<br>同一雙鞋有不同鞋底的話，再畫幾雙只換了鞋底的（不用上色），放在同一個檔案裡或分成幾個檔案一起選都可以，上架時就能設成鞋底選項。<br>每雙的鞋底放進名叫「鞋底」的群組（PDF 要用名叫「鞋底」的圖層），會分得更準；沒有的話會自動比對。</p>
 
       <div class="card" id="artCard" hidden>
         <div id="choiceWrap" hidden>
@@ -556,12 +556,18 @@ const LineArt = (() => {
   const mul = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
   const grow = (bb, x, y) => { if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y; };
   const EMPTY = () => [Infinity, Infinity, -Infinity, -Infinity];
+  // A group (SVG) or layer (PDF) the shop named 鞋底 (or "sole") holds the sole: its shapes get sole: true.
+  // Illustrator writes non-Latin names in SVG ids as _xHHHH_ and adds _1_ to repeated names.
+  const isSoleName = n => !!n && /鞋底|\bsole\b/i.test(n.replace(/_x([0-9a-f]{4})_/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/_/g, " "));
 
   // PDF: walk pdf.js's operator list, keeping the graphics state, and write each painted path in page units
   // (y pointing down, like SVG). Transforms are applied to the points, so nothing is approximated.
-  function fromOperatorList(ol, OPS, view) {
+  function fromOperatorList(ol, OPS, view, layerName = () => null) {
     const [vx0, , , vy1] = view;
     const shapes = [], clips = [], stack = [];
+    // Layers (optional content) the drawing is inside; true for one named 鞋底.
+    const layers = [], inSole = () => layers.includes(true);
+    const soleLayer = oc => !!oc && (oc.type === "OCG" ? isSoleName(layerName(oc.id)) : (oc.ids || []).some(id => isSoleName(layerName(id))));
     let skipped = 0;
     let g = { ctm: [1, 0, 0, 1, 0, 0], fill: "#000000", stroke: "#000000", fillPat: false, lw: 1, cap: 0, join: 0, miter: 10, dash: [[], 0], fa: 1, sa: 1, clip: null };
     let d = [], bb = EMPTY(), rectOnly = true, pendingClip = null, cur = [0, 0], start = [0, 0];
@@ -597,7 +603,8 @@ const LineArt = (() => {
         if (doFill || doStroke) shapes.push({
           d: d.join(" "), fill: doFill ? g.fill : null, rule, fo: g.fa,
           stroke: doStroke ? g.stroke : null, sw: lw, cap: g.cap, join: g.join, miter: g.miter,
-          dash: g.dash[0].length ? g.dash[0].map(v => v * s) : null, so: g.sa, clip: g.clip, bb: bb.slice()
+          dash: g.dash[0].length ? g.dash[0].map(v => v * s) : null, so: g.sa, clip: g.clip, bb: bb.slice(),
+          ...(inSole() ? { sole: true } : {})
         });
       }
       d = []; bb = EMPTY(); rectOnly = true;
@@ -636,6 +643,9 @@ const LineArt = (() => {
         case OPS.closeFillStroke: paint(true, true, "nonzero", true); break;
         case OPS.closeEOFillStroke: paint(true, true, "evenodd", true); break;
         case OPS.endPath: paint(false, false); break;
+        case OPS.beginMarkedContent: layers.push(false); break;
+        case OPS.beginMarkedContentProps: layers.push(a && a[0] === "OC" && soleLayer(a[1])); break;
+        case OPS.endMarkedContent: layers.pop(); break;
         case OPS.showText: case OPS.showSpacedText: case OPS.nextLineShowText: case OPS.nextLineSetSpacingShowText:
         case OPS.paintImageXObject: case OPS.paintInlineImageXObject: case OPS.paintImageMaskXObject: case OPS.shadingFill:
           skipped++; break;
@@ -646,10 +656,11 @@ const LineArt = (() => {
 
   async function fromPdf(buffer, pdfjs) {
     const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false }).promise;
+    const layers = await doc.getOptionalContentConfig().catch(() => null), layerName = id => layers?.getGroup(id)?.name;
     const pages = [];
     for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
       const page = await doc.getPage(n);
-      pages.push(fromOperatorList(await page.getOperatorList(), pdfjs.OPS, page.view));
+      pages.push(fromOperatorList(await page.getOperatorList(), pdfjs.OPS, page.view, layerName));
     }
     return pages;
   }
@@ -693,13 +704,14 @@ const LineArt = (() => {
         const p = m[1].split(/[\s,/]+/).map(parseFloat);
         return p.length > 3 && p[3] === 0 ? null : toHex(p);
       };
-      const walk = el => {
+      const walk = (el, sole) => {
         for (const c of el.children) {
           const n = c.localName;
+          const inSole = sole || ["id", "data-name", "inkscape:label", "serif:id"].some(k => isSoleName(c.getAttribute(k)));
           if (["defs", "clipPath", "mask", "symbol", "marker", "pattern", "linearGradient", "radialGradient", "style", "title", "desc", "metadata"].includes(n)) continue;
           const cs = getComputedStyle(c);
           if (cs.display === "none" || cs.visibility === "hidden") continue;
-          if (n === "g" || n === "a" || n === "svg") { walk(c); continue; }
+          if (n === "g" || n === "a" || n === "svg") { walk(c, inSole); continue; }
           const d = pathOf(c);
           if (!d) { if (n !== "g") skipped++; continue; }
           const m = rootInv.multiply(c.getScreenCTM()), s = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
@@ -717,11 +729,12 @@ const LineArt = (() => {
             d, t: ident ? null : `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map(v => Math.round(v * 1e5) / 1e5).join(" ")})`,
             fill, rule: cs.fillRule === "evenodd" ? "evenodd" : "nonzero", fo: (+cs.fillOpacity || 0) * op,
             stroke: sw > 0 ? stroke : null, sw, cap: CAPS.indexOf(cs.strokeLinecap), join: JOINS.indexOf(cs.strokeLinejoin),
-            miter: parseFloat(cs.strokeMiterlimit) || 4, dash: dash && dash.length ? dash : null, so: (+cs.strokeOpacity || 0) * op, clip: null, bb
+            miter: parseFloat(cs.strokeMiterlimit) || 4, dash: dash && dash.length ? dash : null, so: (+cs.strokeOpacity || 0) * op, clip: null, bb,
+            ...(inSole ? { sole: true } : {})
           });
         }
       };
-      walk(svg);
+      walk(svg, false);
     } finally { host.remove(); }
     return [{ shapes, clips: [], skipped }];
   }
@@ -797,10 +810,17 @@ const LineArt = (() => {
   // by the shapes they share; then the sole colours are swapped, or the sole shapes are swapped in.
   // Sole colours: fills that are not white or painted parts, used for something wide (so not lettering or stitches).
   const isWhite = h => h === "#ffffff" || [1, 3, 5].every(i => parseInt(h.slice(i, i + 2), 16) >= 248);
-  function soleColours(page, idx, partCols) {
+  function soleColours(page, idx, partCols, tagged = [...idx].some(i => page.shapes[i].sole)) {
     const bb = EMPTY();
     idx.forEach(i => { grow(bb, page.shapes[i].bb[0], page.shapes[i].bb[1]); grow(bb, page.shapes[i].bb[2], page.shapes[i].bb[3]); });
     const set = new Set();
+    // Drawn in a 鞋底 group: its fills are the sole's colours. Otherwise guess them.
+    // (A line has a fill too, but no area: skip those.)
+    if (tagged) {
+      const tiny = (bb[3] - bb[1]) * 0.02;
+      idx.forEach(i => { const s = page.shapes[i]; if (s.sole && s.fill && Math.min(s.bb[2] - s.bb[0], s.bb[3] - s.bb[1]) > tiny) set.add(s.fill); });
+      return { set, bb };
+    }
     idx.forEach(i => { const s = page.shapes[i]; if (s.fill && !isWhite(s.fill) && !isMarker(s.fill) && !partCols.has(s.fill) && s.bb[2] - s.bb[0] > (bb[2] - bb[0]) * 0.2) set.add(s.fill); });
     return { set, bb };
   }
@@ -828,7 +848,9 @@ const LineArt = (() => {
   function soleDiff(page, mainIdx, varIdx, partCols = new Set(), varPage = page) {
     const off = varPage === page ? 0 : page.shapes.length, S = off ? [...page.shapes, ...varPage.shapes] : page.shapes;
     const both = { ...page, shapes: S }, M = [...mainIdx], V = [...varIdx].map(i => i + off);
-    const kind = s => (s.fill ? 1 : 0) + (s.stroke ? 2 : 0);
+    // Both drawings have a 鞋底 group: the sole is exactly what is in it (sole shapes only ever match sole shapes).
+    const tagged = M.some(i => S[i].sole) && V.some(i => S[i].sole);
+    const kind = s => (s.fill ? 1 : 0) + (s.stroke ? 2 : 0) + (tagged && s.sole ? 4 : 0);
     const w = s => s.bb[2] - s.bb[0], h = s => s.bb[3] - s.bb[1];
     // Offsets: every pair of same-sized shapes votes for how far apart they are.
     const votes = new Map();
@@ -873,20 +895,20 @@ const LineArt = (() => {
       return o;
     };
     const offFor = offIn(offV), offForM = offIn(offM);
-    const ms = soleColours(both, mainIdx, partCols), vs = soleColours(both, new Set(V), partCols);
+    const ms = soleColours(both, mainIdx, partCols, tagged), vs = soleColours(both, new Set(V), partCols, tagged);
     // Same shape, other colour: a recolour (only the main drawing's sole colours change).
     const recol = new Map();  // main shape index → new fill
     for (const [vi, mi] of pair) {
       const m = S[mi], v = S[vi];
-      if (m.fill && v.fill && m.fill !== v.fill && ms.set.has(m.fill)) recol.set(mi, v.fill);
+      if (m.fill && v.fill && m.fill !== v.fill && (tagged ? m.sole : ms.set.has(m.fill))) recol.set(mi, v.fill);
     }
     // New shapes in the other drawing's sole colours are added; the main drawing's sole shapes they cover are removed.
-    const added = V.filter(vi => !pair.has(vi) && S[vi].fill && vs.set.has(S[vi].fill));
+    const added = V.filter(vi => !pair.has(vi) && (tagged ? S[vi].sole : S[vi].fill && vs.set.has(S[vi].fill)));
     const cover = EMPTY();
     added.forEach(vi => { const [dx, dy] = offFor(vi), b = S[vi].bb; grow(cover, b[0] + dx, b[1] + dy); grow(cover, b[2] + dx, b[3] + dy); });
     const tol = (ms.bb[3] - ms.bb[1]) * 0.02;
     const pairedM = new Set(pair.values());
-    const removed = new Set(added.length ? M.filter(mi => {
+    const removed = new Set(tagged ? M.filter(mi => S[mi].sole && !pairedM.has(mi)) : added.length ? M.filter(mi => {
       const s = S[mi];
       return !pairedM.has(mi) && s.fill && ms.set.has(s.fill) && s.bb[0] >= cover[0] - tol && s.bb[1] >= cover[1] - tol && s.bb[2] <= cover[2] + tol && s.bb[3] <= cover[3] + tol;
     }) : []);
@@ -901,7 +923,7 @@ const LineArt = (() => {
     const paths = new Map(), pathOf = i => paths.get(i) || paths.set(i, path2d(S[i])).get(i);
     for (const mi of M) {
       const s = S[mi];
-      if (pairedM.has(mi) || removed.has(mi) || !s.fill || !ms.set.has(s.fill) || (s.t && !/^matrix\(/.test(s.t))) continue;
+      if (tagged || pairedM.has(mi) || removed.has(mi) || !s.fill || !ms.set.has(s.fill) || (s.t && !/^matrix\(/.test(s.t))) continue;
       const [dx, dy] = offForM(mi), votes = new Map();
       for (let gx = 1; gx < 8; gx++) for (let gy = 1; gy < 8; gy++) {
         const x = s.bb[0] + (s.bb[2] - s.bb[0]) * gx / 8, y = s.bb[1] + (s.bb[3] - s.bb[1]) * gy / 8;
@@ -922,6 +944,7 @@ const LineArt = (() => {
     let consistent = true;
     for (const mi of M) {
       const f = S[mi].fill;
+      if (tagged && !S[mi].sole) { if (f && recol.size && [...recol.keys()].some(q => S[q].fill === f)) consistent = false; continue; }  // a map would recolour this too
       if (!f || !ms.set.has(f)) continue;
       const to = recol.get(mi) || f;
       if (f in map && map[f] !== to) consistent = false;
@@ -957,7 +980,7 @@ const LineArt = (() => {
         return `<path ${pathAttr(v, tf(v, dx, dy))} fill="#000"${v.rule === "evenodd" ? ` fill-rule="evenodd"` : ""}/>`;
       }).join("");
       const id = `__P__-sole${nMask++}`, box = `x="${num(R[0])}" y="${num(R[1])}" width="${num(R[2] - R[0])}" height="${num(R[3] - R[1])}"`;
-      const white = list.map(mi => `<path ${pathAttr(S[mi], S[mi].t)} fill="#ffffff" stroke="#ffffff" stroke-width="${num(Math.max(S[mi].stroke ? S[mi].sw + 1.5 : 0, 5))}" stroke-linejoin="round"/>`).join("");
+      const white = list.map(mi => `<path ${pathAttr(S[mi], S[mi].t)} fill="${S[mi].fill ? "#ffffff" : "none"}" stroke="#ffffff" stroke-width="${num(Math.max(S[mi].stroke ? S[mi].sw + 1.5 : 0, 5))}" stroke-linejoin="round"/>`).join("");
       push(after, list[list.length - 1], { raw: `<defs><mask id="${id}" maskUnits="userSpaceOnUse" ${box}><rect ${box} fill="#fff"/>${cut}</mask></defs><g mask="url(#${id})">${white}</g>`, bb: R, clip: null });
     }
     // A new shape that covers no old sole shape goes after the shape that comes before it in the other drawing.
