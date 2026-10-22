@@ -55,6 +55,12 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .sw.armed i { border-color: var(--bad); }
 .sw.armed .x { width: auto; padding: 0 8px; border-radius: 99px; font-size: 12px; }
 .list-head { display: flex; justify-content: space-between; align-items: center; }
+.heads { display: flex; gap: 14px; }
+/* 下架 / 上架 buttons sit on the tile's corner like the delete ×. */
+.sw .act { position: absolute; top: -6px; right: -6px; height: 24px; padding: 0 9px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 12px; line-height: 24px; font-weight: 900; }
+.sw .act.up { background: var(--ok); color: #fff; }
+.off i { filter: grayscale(.7); opacity: .7; }
+.hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
 
@@ -125,10 +131,14 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><button class="link-btn" id="editList" type="button">刪除色卡</button></div>
+    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
+    <div id="offWrap" hidden>
+      <h2 class="hidden-head">已下架 <span class="small">客人看不到，照片還在，按「上架」就回來</span></h2>
+      <div class="grid off" id="offList"></div>
+    </div>
   </main>
 </div>
 
@@ -236,53 +246,98 @@ async function nameTaken(name) {
     const r = await gh(`/contents/${k}`);
     if (r.ok && (await r.json()).some(f => f.name.replace(/\.[^.]+$/, "") === name)) return true;
   }
-  return SHOP.some(s => s.name === name);
+  return SHOP.some(s => s.name === name) || OFF.some(s => s.name === name);
 }
 
-// ---- What customers see now: the swatch site's list, plus anything just uploaded that is still being published. ----
-let SHOP = [], watching = null;
+// ---- What customers see now (the swatch site's list), plus anything just uploaded that is still being published,
+// and what is 下架 (off the shelf: kept in the repo, listed in hidden.json, not shown to customers). ----
+let SHOP = [], OFF = [], watching = null;
 async function loadShop() {
   try {
-    const r = await fetch(SITE + "swatches.json", { cache: "no-store" });
+    const [r, h] = await Promise.all([fetch(SITE + "swatches.json", { cache: "no-store" }), fetch(SITE + "swatches-hidden.json", { cache: "no-store" })]);
     if (r.ok) SHOP = await r.json();
+    if (h.ok) OFF = await h.json();
     $("listNote").textContent = "";
   } catch { $("listNote").textContent = "現在讀不到網站上的色卡清單。"; }
   for (let i = pending.length - 1; i >= 0; i--) if (SHOP.some(s => s.name === pending[i].name && s.kind === pending[i].kind)) {
     say($("status"), `「${pending[i].name}」已上架 ✓ 客人重新整理網站就看得到。`, "ok");
     pending.splice(i, 1);
   }
-  for (const key of [...removing]) if (!SHOP.some(s => s.kind + "/" + s.name === key)) {
-    removing.delete(key);
-    say($("listStatus"), `「${key.split("/").slice(1).join("/")}」已從網站下架 ✓`, "ok");
-  }
+  const listed = key => SHOP.some(s => s.kind + "/" + s.name === key), off = key => OFF.some(s => s.kind + "/" + s.name === key);
+  const nameOf = key => key.split("/").slice(1).join("/");
+  for (const key of [...removing]) if (!listed(key) && !off(key)) { removing.delete(key); say($("listStatus"), `「${nameOf(key)}」已刪除 ✓`, "ok"); }
+  for (const key of [...hiding]) if (off(key)) { hiding.delete(key); say($("listStatus"), `「${nameOf(key)}」已下架 ✓ 客人看不到了。`, "ok"); }
+  for (const key of [...showing]) if (listed(key)) { showing.delete(key); say($("listStatus"), `「${nameOf(key)}」已重新上架 ✓`, "ok"); }
   renderList();
 }
 function renderList() {
-  const cell = (n, k, url, isNew) => {
-    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key;
-    const x = deleting && !isNew && !gone ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
-    return `<div class="sw${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}"><i style="background-image:url('${url}')"></i>${x}${esc(n)}<br>${isNew ? "上架中…" : gone ? "下架中…" : KIND_NAME[k]}</div>`;
+  const cell = (n, k, url, isNew, isOff) => {
+    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key);
+    const btn = isNew || busy ? ""
+      : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
+      : isOff ? `<button class="act up" type="button" data-show="${esc(key)}">上架</button>`
+      : mode === "hide" ? `<button class="act" type="button" data-hide="${esc(key)}">下架</button>` : "";
+    const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : KIND_NAME[k];
+    return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}"><i style="background-image:url('${url}')"></i>${btn}${esc(n)}<br>${info}</div>`;
   };
   $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true)).join("") +
     [...SHOP].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false)).join("");
+  $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, true)).join("");
+  $("offWrap").hidden = !OFF.length;
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
-// ---- Deleting a swatch: 刪除色卡 shows an × on each one; tap it, then tap again to confirm (no pop-ups). ----
-let deleting = false, armedKey = null;
-const removing = new Set();  // "kind/name" deleted from the repo but still listed on the swatch site
-$("editList").addEventListener("click", () => {
-  deleting = !deleting; armedKey = null;
-  $("editList").textContent = deleting ? "完成" : "刪除色卡";
-  say($("listStatus"), deleting ? "按色卡右上角的 ×，再按一次確認，就會從網站下架。" : "", "wait");
+// ---- 下架 shows a 下架 button on each swatch (one tap, it can be put back); 刪除 shows an ×: tap it, then tap again to confirm (no pop-ups). ----
+let mode = "", armedKey = null;  // mode: "" | "hide" | "delete"
+const removing = new Set(), hiding = new Set(), showing = new Set();  // "kind/name" sent to the repo, until the swatch site shows the change
+function setMode(m) {
+  mode = mode === m ? "" : m; armedKey = null;
+  $("hideList").textContent = mode === "hide" ? "完成" : "下架";
+  $("editList").textContent = mode === "delete" ? "完成" : "刪除";
+  say($("listStatus"), mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。" : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
   renderList();
-});
-$("list").addEventListener("click", async e => {
+}
+$("hideList").addEventListener("click", () => setMode("hide"));
+$("editList").addEventListener("click", () => setMode("delete"));
+const fail = err => err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message;
+const b64utf8 = s => { const b = new TextEncoder().encode(s); let out = ""; for (let i = 0; i < b.length; i += 0x8000) out += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(out); };
+const utf8b64 = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, "")), c => c.charCodeAt(0)));
+// hidden.json in the repo lists the swatches that are 下架, as "kind/name".
+async function editHidden(change, message) {
+  for (let tries = 0; ; tries++) {
+    const cur = await gh("/contents/hidden.json");
+    if (!cur.ok && cur.status !== 404) throw new Error(cur.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `讀不到下架清單（${cur.status}）。`);
+    const file = cur.ok ? await cur.json() : null;
+    let list = [];
+    try { list = file ? JSON.parse(utf8b64(file.content)) : []; } catch {}
+    const next = change(list);
+    if (JSON.stringify(next) === JSON.stringify(list)) return;
+    const r = await gh("/contents/hidden.json", { method: "PUT", body: { message, content: b64utf8(JSON.stringify(next, null, 1) + "\n"), ...(file ? { sha: file.sha } : {}) } });
+    if (r.ok) return;
+    if ((r.status === 409 || r.status === 422) && tries < 2) continue;  // someone else changed it at the same moment: read it again
+    throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
+  }
+}
+async function setOff(key, off) {
+  const name = key.split("/").slice(1).join("/");
+  if (!token) { renderList(); return say($("listStatus"), `試用模式：正式版會把「${name}」${off ? "下架（客人看不到，照片留著）" : "重新上架"}。這次沒有改。`, "wait"); }
+  say($("listStatus"), `${off ? "下架" : "上架"}「${name}」中…`, "wait");
+  try {
+    await editHidden(list => off ? [...new Set([...list, key])] : list.filter(k => k !== key), `${off ? "Hide" : "Show"} swatch ${key}`);
+    (off ? hiding : showing).add(key);
+    say($("listStatus"), `「${name}」已${off ? "下架" : "重新上架"}，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchSite();
+  } catch (err) { say($("listStatus"), fail(err), "bad"); }
+  renderList();
+}
+document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("click", async e => {
+  const h = e.target.closest("[data-hide]"); if (h) return setOff(h.dataset.hide, true);
+  const u = e.target.closest("[data-show]"); if (u) return setOff(u.dataset.show, false);
   const b = e.target.closest("[data-del]"); if (!b) return;
   const key = b.dataset.del;
   if (armedKey !== key) { armedKey = key; return renderList(); }
   armedKey = null;
   const kind = key.split("/")[0], name = key.slice(kind.length + 1);
-  if (!token) { renderList(); return say($("listStatus"), `試用模式：正式版會把「${name}」從網站下架。這次沒有刪除。`, "wait"); }
+  if (!token) { renderList(); return say($("listStatus"), `試用模式：正式版會把「${name}」永久刪除。這次沒有刪除。`, "wait"); }
   say($("listStatus"), `刪除「${name}」中…`, "wait");
   try {
     const r = await gh(`/contents/${encodeURIComponent(kind)}`);
@@ -293,21 +348,21 @@ $("list").addEventListener("click", async e => {
       const d = await gh(`/contents/${f.path.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE", body: { message: `Remove swatch ${name} (${kind})`, sha: f.sha } });
       if (!d.ok) throw new Error(d.status === 403 || d.status === 404 ? "這把金鑰沒有刪除權限。" : `刪除失敗（${d.status}），請再試一次。`);
     }
+    // A deleted swatch leaves the 下架 list too, so a new photo with the same name isn't hidden.
+    if (OFF.some(s => s.kind + "/" + s.name === key)) await editHidden(list => list.filter(k => k !== key), `Forget hidden swatch ${key}`);
     removing.add(key);
     say($("listStatus"), `「${name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
     watchSite();
-  } catch (err) {
-    say($("listStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad");
-  }
+  } catch (err) { say($("listStatus"), fail(err), "bad"); }
   renderList();
-});
+}));
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function watchSite() {
   clearInterval(watching);
   let tries = 0;
   watching = setInterval(async () => {
     await loadShop();
-    if (!pending.length && !removing.size) clearInterval(watching);
+    if (!pending.length && !removing.size && !hiding.size && !showing.size) clearInterval(watching);
     else if (++tries > 40) { clearInterval(watching); say($("status"), "上傳成功，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }

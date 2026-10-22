@@ -1,6 +1,9 @@
 """Build the swatch site into _site/: every photo in leather/ and canvas/,
 cropped to a centre square, resized, and listed in swatches.json (the file name, minus extension, is the swatch's name),
-plus the shoe styles in styles/, listed in styles.json."""
+plus the shoe styles in styles/, listed in styles.json.
+下架 (taken off the shelf) items stay in the repo but are listed in hidden.json (swatches, as "kind/name")
+or styles/hidden.json (style ids): customers don't see them, and the upload pages read them from
+swatches-hidden.json / styles-hidden.json so they can be put back."""
 import hashlib, json, shutil
 from pathlib import Path
 from PIL import Image, ImageOps
@@ -16,10 +19,17 @@ OUT = ROOT / "_site"
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 SIZE = 1024  # shown as a 30 cm square on the shoe, so keep enough detail
 
+def read_list(path):
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
 shutil.rmtree(OUT, ignore_errors=True)
 (OUT / "s").mkdir(parents=True)
 
-swatches = []
+hidden_sw = read_list(ROOT / "hidden.json")
+swatches, swatches_hidden = [], []
 for kind in ("leather", "canvas"):
     for src in sorted((ROOT / kind).iterdir()):
         if src.suffix.lower() not in EXTS:
@@ -33,13 +43,15 @@ for kind in ("leather", "canvas"):
         # Named by a hash of the original path so a swatch keeps its address (and customers' saved picks) between builds.
         name = f"s/{kind}-{hashlib.md5(src.name.encode()).hexdigest()[:10]}.jpg"
         img.save(OUT / name, quality=85)
-        swatches.append({"name": src.stem, "kind": kind, "file": name})
+        sw = {"name": src.stem, "kind": kind, "file": name}
+        (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
 
 # Shoe styles (line drawings made into the studio's format by the upload page), one styles/<id>.json each.
 # styles/order.json lists ids in the order customers see them; any style it leaves out follows, oldest first.
+hidden_st = read_list(ROOT / "styles" / "hidden.json")
 styles = []
 for src in sorted((ROOT / "styles").glob("*.json")):
-    if src.name == "order.json":
+    if src.name in ("order.json", "hidden.json"):
         continue
     try:
         st = json.loads(src.read_text(encoding="utf-8"))
@@ -54,11 +66,15 @@ except Exception:
     order = []
 rank = {k: i for i, k in enumerate(order)}
 styles.sort(key=lambda s: (rank.get(s["id"], len(rank)), s.get("added", ""), s["id"]))
-(OUT / "styles.json").write_text(json.dumps(styles, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+styles_hidden = [s for s in styles if s["id"] in hidden_st]
+styles = [s for s in styles if s["id"] not in hidden_st]
+for name, data in (("styles.json", styles), ("styles-hidden.json", styles_hidden)):
+    (OUT / name).write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 # The shop's upload pages: 色卡 at /upload/, 鞋款 at /style-upload/ (kept apart while the shop tries the second one out).
 shutil.copytree(ROOT / "upload", OUT / "upload")
 shutil.copytree(ROOT / "style-upload", OUT / "style-upload")
 
 (OUT / "swatches.json").write_text(json.dumps(swatches, ensure_ascii=False, indent=1), encoding="utf-8")
-print(f"{len(swatches)} swatches, {len(styles)} styles")
+(OUT / "swatches-hidden.json").write_text(json.dumps(swatches_hidden, ensure_ascii=False, indent=1), encoding="utf-8")
+print(f"{len(swatches)} swatches ({len(swatches_hidden)} 下架), {len(styles)} styles ({len(styles_hidden)} 下架)")

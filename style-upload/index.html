@@ -112,6 +112,11 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
 .opts { display: grid; gap: 14px; }
 .st-card.editing { border-color: var(--accent); }
+/* 下架 / 上架 buttons sit on the card's corner like the delete ×. */
+.st-card .act { position: absolute; top: -8px; right: -8px; height: 26px; padding: 0 10px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 13px; line-height: 26px; font-weight: 900; }
+.st-card .act.up { background: var(--ok); color: #fff; }
+.st-off .thumb { filter: grayscale(.7); opacity: .7; }
+#stOffWrap h2 { margin-bottom: 10px; }
 /* Sole options: the main drawing's own sole, then other drawings of the same shoe with another sole. */
 .sole-row { display: grid; grid-template-columns: 34px minmax(0, 128px) 1fr; gap: 10px; align-items: center; }
 .sole-row .check { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
@@ -241,7 +246,7 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
       </div>
       <p class="status" id="artStatus"></p>
 
-      <div class="list-head"><h2>目前的鞋款</h2><div class="heads"><button class="link-btn" id="editStyles" type="button">設定</button><button class="link-btn" id="orderStyles" type="button">調整順序</button><button class="link-btn" id="delStyles" type="button">刪除</button></div></div>
+      <div class="list-head"><h2>目前的鞋款</h2><div class="heads"><button class="link-btn" id="editStyles" type="button">設定</button><button class="link-btn" id="orderStyles" type="button">調整順序</button><button class="link-btn" id="hideStyles" type="button">下架</button><button class="link-btn" id="delStyles" type="button">刪除</button></div></div>
       <p class="status" id="stListStatus"></p>
       <div class="st-list" id="stList"></div>
       <div class="card" id="stEdit" hidden>
@@ -251,6 +256,10 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
       </div>
       <div class="row" id="orderBar" hidden><button class="btn" id="orderCancel" type="button">取消</button><button class="btn primary" id="orderSave" type="button">儲存順序</button></div>
       <p class="small" id="stListNote"></p>
+      <div id="stOffWrap" hidden>
+        <h2>已下架 <span class="small">客人看不到，檔案還在，按「上架」就回來</span></h2>
+        <div class="st-list st-off" id="stOffList"></div>
+      </div>
     </section>
   </main>
 </div>
@@ -1307,7 +1316,7 @@ $("artPublish").addEventListener("click", async () => {
   const st = currentStyle();
   if (!Object.keys(st.parts).length) return say($("artStatus"), "請至少把一種顏色設成部位。", "bad");
   if (art.opts.lace && Object.keys(st.parts).length < 2) return say($("artStatus"), "鞋帶以外至少要有一個可換色的部位。", "bad");
-  if (STYLE_LIST.some(s => s.name === name) || stPending.some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
+  if ([...STYLE_LIST, ...STYLE_OFF, ...stPending].some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
   const soles = soleList();
   if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、厚底）。", "bad");
   if (new Set(soles.map(s => s.name)).size < soles.length) return say($("artStatus"), "鞋底的名字不能重複。", "bad");
@@ -1336,12 +1345,14 @@ function closeArt() { art = null; $("artCard").hidden = true; $("artPick").hidde
 const b64utf8 = s => { const b = new TextEncoder().encode(s); let out = ""; for (let i = 0; i < b.length; i += 0x8000) out += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(out); };
 
 // ---- The styles customers see now (styles.json on the swatch site), plus uploads still being published. ----
-let STYLE_LIST = [], stylesLoaded = false, trialList = false, stWatch = null;
-const stPending = [], stRemoving = new Set();
-let stMode = "", stArmed = null, newOrder = null;  // stMode: "" | "order" | "delete"
+// STYLE_OFF: styles that are 下架 (off the shelf: kept in the repo, listed in styles/hidden.json, not shown to customers).
+let STYLE_LIST = [], STYLE_OFF = [], stylesLoaded = false, trialList = false, stWatch = null;
+const stPending = [], stRemoving = new Set(), stHiding = new Set(), stShowing = new Set();
+let stMode = "", stArmed = null, newOrder = null;  // stMode: "" | "edit" | "order" | "hide" | "delete"
 async function loadStyles() {
   try {
-    const r = await fetch(SITE + "styles.json", { cache: "no-store" });
+    const [r, h] = await Promise.all([fetch(SITE + "styles.json", { cache: "no-store" }), fetch(SITE + "styles-hidden.json", { cache: "no-store" })]);
+    if (h.ok && !trialList) STYLE_OFF = await h.json();
     if (r.ok) { if (!trialList) STYLE_LIST = await r.json(); $("stListNote").textContent = ""; }
     else $("stListNote").textContent = r.status === 404 ? "網站上還沒有鞋款清單。" : "現在讀不到網站上的鞋款清單。";
     stylesLoaded = true;
@@ -1354,24 +1365,33 @@ async function loadStyles() {
     const s = STYLE_LIST.find(x => x.id === id);
     if (!s || JSON.stringify([s.sizes, s.lace || ""]) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
   }
-  for (const id of [...stRemoving]) if (!STYLE_LIST.some(s => s.id === id)) { stRemoving.delete(id); say($("stListStatus"), "已從網站下架 ✓", "ok"); }
+  const listed = id => STYLE_LIST.some(s => s.id === id), off = id => STYLE_OFF.some(s => s.id === id);
+  for (const id of [...stRemoving]) if (!listed(id) && !off(id)) { stRemoving.delete(id); say($("stListStatus"), "已刪除 ✓", "ok"); }
+  for (const id of [...stHiding]) if (off(id)) { stHiding.delete(id); say($("stListStatus"), "已下架 ✓ 客人看不到了。", "ok"); }
+  for (const id of [...stShowing]) if (listed(id)) { stShowing.delete(id); say($("stListStatus"), "已重新上架 ✓", "ok"); }
   if (orderSaving && orderSaving.every((id, i) => STYLE_LIST.filter(s => orderSaving.includes(s.id))[i]?.id === id)) { orderSaving = null; say($("stListStatus"), "新的順序已上線 ✓", "ok"); }
   renderStyleList();
 }
 function renderStyleList() {
   const list = newOrder ? newOrder.map(id => STYLE_LIST.find(s => s.id === id)).filter(Boolean) : STYLE_LIST;
-  const card = (s, i, isNew) => {
-    const gone = stRemoving.has(s.id), armed = stArmed === s.id;
-    const x = stMode === "delete" && !isNew && !gone ? `<button class="x" type="button" data-del="${s.id}" aria-label="刪除 ${esc(s.name)}">${armed ? "再按一次刪除" : "×"}</button>` : "";
-    const edit = stMode === "edit" && !isNew && !gone;
-    const move = stMode === "order" && !isNew ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
-    const info = isNew ? "上架中…" : gone ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
-    return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${gone ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
+  const card = (s, i, isNew, isOff) => {
+    const gone = stRemoving.has(s.id), busy = gone || stHiding.has(s.id) || stShowing.has(s.id), armed = stArmed === s.id;
+    const x = isNew || busy ? ""
+      : stMode === "delete" ? `<button class="x" type="button" data-del="${s.id}" aria-label="刪除 ${esc(s.name)}">${armed ? "再按一次刪除" : "×"}</button>`
+      : isOff ? `<button class="act up" type="button" data-show="${s.id}">上架</button>`
+      : stMode === "hide" ? `<button class="act" type="button" data-hide="${s.id}">下架</button>` : "";
+    const edit = stMode === "edit" && !isNew && !busy && !isOff;
+    const move = stMode === "order" && !isNew && !isOff ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
+    const info = isNew || stShowing.has(s.id) ? "上架中…" : gone ? "刪除中…" : stHiding.has(s.id) ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
+    return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
   };
   $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
+  $("stOffList").innerHTML = STYLE_OFF.map((s, i) => card(s, i, false, true)).join("");
+  $("stOffWrap").hidden = !STYLE_OFF.length;
   $("orderBar").hidden = stMode !== "order";
   $("orderStyles").textContent = stMode === "order" ? "取消" : "調整順序";
   $("delStyles").textContent = stMode === "delete" ? "完成" : "刪除";
+  $("hideStyles").textContent = stMode === "hide" ? "完成" : "下架";
   $("editStyles").textContent = stMode === "edit" ? "完成" : "設定";
   if (!list.length && !stPending.length && !$("stListNote").textContent) $("stListNote").textContent = "還沒有鞋款。";
 }
@@ -1424,9 +1444,51 @@ $("orderStyles").addEventListener("click", () => {
 $("orderCancel").addEventListener("click", () => { stMode = ""; newOrder = null; say($("stListStatus"), ""); renderStyleList(); });
 $("delStyles").addEventListener("click", () => {
   stMode = stMode === "delete" ? "" : "delete"; stArmed = null; newOrder = null; closeStEdit();
-  say($("stListStatus"), stMode === "delete" ? "按鞋款右上角的 ×，再按一次確認，就會從網站下架。" : "", "wait");
+  say($("stListStatus"), stMode === "delete" ? "按鞋款右上角的 ×，再按一次確認，就會永久刪除（檔案也會刪掉）。" : "", "wait");
   renderStyleList();
 });
+$("hideStyles").addEventListener("click", () => {
+  stMode = stMode === "hide" ? "" : "hide"; stArmed = null; newOrder = null; closeStEdit();
+  say($("stListStatus"), stMode === "hide" ? "按鞋款上的「下架」，客人就看不到這款，檔案會留著，之後可以再上架。" : "", "wait");
+  renderStyleList();
+});
+const stFail = err => err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message;
+const utf8b64 = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, "")), c => c.charCodeAt(0)));
+// styles/hidden.json in the repo lists the ids of the styles that are 下架.
+async function editStHidden(change, message) {
+  for (let tries = 0; ; tries++) {
+    const cur = await gh("/contents/styles/hidden.json");
+    if (!cur.ok && cur.status !== 404) throw new Error(cur.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `讀不到下架清單（${cur.status}）。`);
+    const file = cur.ok ? await cur.json() : null;
+    let list = [];
+    try { list = file ? JSON.parse(utf8b64(file.content)) : []; } catch {}
+    const next = change(list);
+    if (JSON.stringify(next) === JSON.stringify(list)) return;
+    const r = await gh("/contents/styles/hidden.json", { method: "PUT", body: { message, content: b64utf8(JSON.stringify(next, null, 1) + "\n"), ...(file ? { sha: file.sha } : {}) } });
+    if (r.ok) return;
+    if ((r.status === 409 || r.status === 422) && tries < 2) continue;  // changed by someone else at the same moment: read it again
+    throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
+  }
+}
+async function setStOff(id, off) {
+  const s = (off ? STYLE_LIST : STYLE_OFF).find(x => x.id === id);
+  if (!s) return;
+  if (off && STYLE_LIST.filter(x => !stRemoving.has(x.id) && !stHiding.has(x.id)).length < 2) return say($("stListStatus"), "網站至少要留一個鞋款。", "bad");
+  if (!token) {
+    if (off) { STYLE_LIST = STYLE_LIST.filter(x => x !== s); STYLE_OFF = [...STYLE_OFF, s]; }
+    else { STYLE_OFF = STYLE_OFF.filter(x => x !== s); STYLE_LIST = [...STYLE_LIST, s]; }
+    trialList = true; renderStyleList();
+    return say($("stListStatus"), `試用模式：正式使用時，「${s.name}」會${off ? "下架（客人看不到，檔案留著）" : "重新上架"}。這次沒有改（只在這頁試用）。`, "wait");
+  }
+  say($("stListStatus"), `${off ? "下架" : "上架"}「${s.name}」中…`, "wait");
+  try {
+    await editStHidden(list => off ? [...new Set([...list, id])] : list.filter(k => k !== id), `${off ? "Hide" : "Show"} style ${s.name}`);
+    (off ? stHiding : stShowing).add(id);
+    say($("stListStatus"), `「${s.name}」已${off ? "下架" : "重新上架"}，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchStyles();
+  } catch (err) { say($("stListStatus"), stFail(err), "bad"); }
+  renderStyleList();
+}
 let orderSaving = null;
 $("orderSave").addEventListener("click", async () => {
   const ids = newOrder;
@@ -1447,7 +1509,9 @@ $("orderSave").addEventListener("click", async () => {
     watchStyles();
   } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
 });
-$("stList").addEventListener("click", async e => {
+const onStyleClick = async e => {
+  const hd = e.target.closest("[data-hide]"); if (hd) return setStOff(hd.dataset.hide, true);
+  const sh = e.target.closest("[data-show]"); if (sh) return setStOff(sh.dataset.show, false);
   const ed = e.target.closest("[data-edit]");
   if (ed) {
     const s = STYLE_LIST.find(x => x.id === ed.dataset.edit);
@@ -1463,13 +1527,13 @@ $("stList").addEventListener("click", async e => {
     return renderStyleList();
   }
   const b = e.target.closest("[data-del]"); if (!b) return;
-  const id = b.dataset.del, s = STYLE_LIST.find(x => x.id === id);
+  const id = b.dataset.del, isOff = STYLE_OFF.some(x => x.id === id), s = (isOff ? STYLE_OFF : STYLE_LIST).find(x => x.id === id);
   if (stArmed !== id) { stArmed = id; return renderStyleList(); }
   stArmed = null;
-  if (STYLE_LIST.filter(x => !stRemoving.has(x.id)).length < 2) { renderStyleList(); return say($("stListStatus"), "網站至少要留一個鞋款。", "bad"); }
+  if (!isOff && STYLE_LIST.filter(x => !stRemoving.has(x.id) && !stHiding.has(x.id)).length < 2) { renderStyleList(); return say($("stListStatus"), "網站至少要留一個鞋款。", "bad"); }
   if (!token) {
-    STYLE_LIST = STYLE_LIST.filter(x => x.id !== id); trialList = true; renderStyleList();
-    return say($("stListStatus"), `試用模式：正式使用時，「${s.name}」會從網站下架。這次沒有刪除（只在這頁試用）。`, "wait");
+    STYLE_LIST = STYLE_LIST.filter(x => x.id !== id); STYLE_OFF = STYLE_OFF.filter(x => x.id !== id); trialList = true; renderStyleList();
+    return say($("stListStatus"), `試用模式：正式使用時，「${s.name}」會永久刪除。這次沒有刪除（只在這頁試用）。`, "wait");
   }
   say($("stListStatus"), `刪除「${s.name}」中…`, "wait");
   try {
@@ -1477,18 +1541,21 @@ $("stList").addEventListener("click", async e => {
     if (!f.ok) throw new Error(f.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `鞋款庫裡找不到「${s.name}」，可能已經刪掉了。`);
     const d = await gh(`/contents/styles/${id}.json`, { method: "DELETE", body: { message: `Remove style ${s.name}`, sha: (await f.json()).sha } });
     if (!d.ok) throw new Error(d.status === 403 || d.status === 404 ? "這把金鑰沒有刪除權限。" : `刪除失敗（${d.status}），請再試一次。`);
+    if (isOff) await editStHidden(list => list.filter(k => k !== id), `Forget hidden style ${s.name}`);
     stRemoving.add(id);
     say($("stListStatus"), `「${s.name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
     watchStyles();
-  } catch (err) { say($("stListStatus"), err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message, "bad"); }
+  } catch (err) { say($("stListStatus"), stFail(err), "bad"); }
   renderStyleList();
-});
+};
+$("stList").addEventListener("click", onStyleClick);
+$("stOffList").addEventListener("click", onStyleClick);
 function watchStyles() {
   clearInterval(stWatch);
   let tries = 0;
   stWatch = setInterval(async () => {
     await loadStyles();
-    if (!stPending.length && !stRemoving.size && !orderSaving && !stSaving.size) clearInterval(stWatch);
+    if (!stPending.length && !stRemoving.size && !stHiding.size && !stShowing.size && !orderSaving && !stSaving.size) clearInterval(stWatch);
     else if (++tries > 40) { clearInterval(stWatch); say($("stListStatus"), "已送出，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }
