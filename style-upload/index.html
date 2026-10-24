@@ -101,7 +101,7 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .st-card .move button { padding: 6px; border-radius: 10px; border: 2px solid var(--line); font-weight: 900; }
 .st-card .move button:disabled { opacity: .3; }
 .heads { display: flex; gap: 14px; }
-/* Per-style settings: size ranges (women / men) and whether the shoe has laces. */
+/* Per-style settings: size ranges (women / men) and whether the shoe has laces or a buckle. */
 .opt-row { display: grid; grid-template-columns: 92px 1fr auto 1fr; gap: 8px; align-items: center; }
 .opt-row + .opt-row { margin-top: 8px; }
 .opt-row.lace { grid-template-columns: 92px auto 1fr; }
@@ -747,7 +747,9 @@ const LineArt = (() => {
 
   // Split a page into its separate drawings. Shapes that overlap become blocks (drawings side by side stay apart);
   // a top view and the side view under it join up when they share a painted colour, or are both unpainted.
-  function groups(page) {
+  // k: how many views one shoe has (2: top and side; 3: a top view for each foot, then the side), so unpainted views
+  // stack up k at a time. A painted drawing joins all its views by colour, however many there are.
+  function groups(page, k = 2) {
     const rows = [];
     page.shapes.forEach((s, i) => { if (isFinite(s.bb[0])) rows.push({ i, bb: s.bb }); });
     if (!rows.length) return [];
@@ -771,11 +773,12 @@ const LineArt = (() => {
     }
     // A block that ended up inside another block's box (a row split off by a gap) belongs to it.
     const inside = (a, b) => a.bb[0] >= b.bb[0] - 0.5 && a.bb[1] >= b.bb[1] - 0.5 && a.bb[2] <= b.bb[2] + 0.5 && a.bb[3] <= b.bb[3] + 0.5;
-    const join = (a, b) => { a.idx.push(...b.idx); a.bb = [Math.min(a.bb[0], b.bb[0]), Math.min(a.bb[1], b.bb[1]), Math.max(a.bb[2], b.bb[2]), Math.max(a.bb[3], b.bb[3])]; blocks = blocks.filter(x => x !== b); };
+    const join = (a, b) => { a.idx.push(...b.idx); a.views = (a.views || 1) + (b.views || 1); a.bb = [Math.min(a.bb[0], b.bb[0]), Math.min(a.bb[1], b.bb[1]), Math.max(a.bb[2], b.bb[2]), Math.max(a.bb[3], b.bb[3])]; blocks = blocks.filter(x => x !== b); };
     for (let again = true; again;) {
       again = false;
       for (const a of blocks) for (const b of blocks) if (a !== b && inside(b, a)) { join(a, b); again = true; break; }
     }
+    blocks.forEach(b => b.views = 1);
     const cols = b => new Set(b.idx.map(i => page.shapes[i].fill).filter(f => f && isMarker(f)));
     const area = b => (b.bb[2] - b.bb[0]) * (b.bb[3] - b.bb[1]);
     const xOver = (a, b) => (Math.min(a.bb[2], b.bb[2]) - Math.max(a.bb[0], b.bb[0])) / Math.min(a.bb[2] - a.bb[0], b.bb[2] - b.bb[0]);
@@ -783,26 +786,43 @@ const LineArt = (() => {
     const under = (a, b) => b.bb[1] >= a.bb[3] - 0.5 && xOver(a, b) > 0.5 &&
       !blocks.some(c => c !== a && c !== b && xOver(a, c) > 0.3 && c.bb[1] >= a.bb[3] - 0.5 && c.bb[3] <= b.bb[1] + 0.5);
     const big = Math.max(...blocks.map(area));
-    const pairs = [];
-    for (const a of blocks) for (const b of blocks) if (a !== b && area(a) > big * 0.15 && area(b) > big * 0.15 && under(a, b)) pairs.push([a, b]);
+    const isBig = b => area(b) > big * 0.15;
     // Painted views that share a colour join (a top view can sit over a side view, or a third view under that).
-    for (const [a, b] of pairs) {
-      if (!blocks.includes(a) || !blocks.includes(b)) continue;
-      const ca = cols(a);
-      if ([...cols(b)].some(c => ca.has(c))) { a.done = true; join(a, b); }
+    for (let again = true; again;) {
+      again = false;
+      for (const a of blocks) {
+        const ca = cols(a), b = isBig(a) && ca.size && blocks.find(b => b !== a && isBig(b) && under(a, b) && [...cols(b)].some(c => ca.has(c)));
+        if (b) { a.done = true; join(a, b); again = true; break; }
+      }
     }
-    // Unpainted views pair up two by two, closest first.
-    pairs.filter(([a, b]) => blocks.includes(a) && blocks.includes(b) && !a.done && !b.done && !cols(a).size && !cols(b).size)
-      .sort((p, q) => (p[1].bb[1] - p[0].bb[3]) - (q[1].bb[1] - q[0].bb[3]))
-      .forEach(([a, b]) => { if (blocks.includes(a) && blocks.includes(b) && !a.done && !b.done) { a.done = true; join(a, b); } });
+    const pairs = [];
+    for (const a of blocks) for (const b of blocks) if (a !== b && isBig(a) && isBig(b) && under(a, b)) pairs.push([a, b]);
+    if (k <= 2) {
+      // Unpainted views pair up two by two, closest first.
+      pairs.filter(([a, b]) => blocks.includes(a) && blocks.includes(b) && !a.done && !b.done && !cols(a).size && !cols(b).size)
+        .sort((p, q) => (p[1].bb[1] - p[0].bb[3]) - (q[1].bb[1] - q[0].bb[3]))
+        .forEach(([a, b]) => { if (blocks.includes(a) && blocks.includes(b) && !a.done && !b.done) { a.done = true; join(a, b); } });
+    } else {
+      // Unpainted views stack up k at a time, from the top of each column down.
+      const free = b => blocks.includes(b) && !b.done && !cols(b).size && isBig(b);
+      for (const a of [...blocks].sort((p, q) => p.bb[1] - q.bb[1])) {
+        if (!free(a)) continue;
+        while ((a.views || 1) < k) {
+          const b = blocks.filter(b => b !== a && free(b) && under(a, b)).sort((p, q) => p.bb[1] - q.bb[1])[0];
+          if (!b) break;
+          join(a, b);
+        }
+        a.done = true;
+      }
+    }
     // Small leftovers (a logo, a label) join the nearest drawing.
     const dist = (a, b) => Math.hypot(Math.max(0, a.bb[0] - b.bb[2], b.bb[0] - a.bb[2]), Math.max(0, a.bb[1] - b.bb[3], b.bb[1] - a.bb[3]));
     for (const s of blocks.filter(b => area(b) < big * 0.15)) {
       const others = blocks.filter(b => b !== s && area(b) >= big * 0.15);
-      if (others.length) join(others.reduce((m, b) => dist(s, b) < dist(s, m) ? b : m), s);
+      if (others.length) { s.views = 0; join(others.reduce((m, b) => dist(s, b) < dist(s, m) ? b : m), s); }
     }
     return blocks.sort((a, b) => a.bb[1] - b.bb[1] || a.bb[0] - b.bb[0])
-      .map(b => ({ idx: new Set(b.idx.sort((x, y) => x - y)), y0: b.bb[1], y1: b.bb[3], bb: b.bb, painted: cols(b).size > 0 }));
+      .map(b => ({ idx: new Set(b.idx.sort((x, y) => x - y)), y0: b.bb[1], y1: b.bb[3], bb: b.bb, painted: cols(b).size > 0, views: b.views || 1 }));
   }
 
   // Sole options: another drawing of the same shoe, in the same file, where only the sole is different
@@ -1086,7 +1106,11 @@ const SIZE_LIST = { women: ["34.5","35","35.5","36","36.5","37","37.5","38","38.
                     men: ["38.5","39","39.5","40","40.5","41","41.5","42","42.5","43","43.5","44","44.5","45"] };
 const SIZE_ZH = { women: "女款", men: "男款" };
 const fullSizes = () => Object.fromEntries(Object.entries(SIZE_LIST).map(([g, l]) => [g, [l[0], l[l.length - 1]]]));
-const optsOf = st => ({ sizes: st.sizes ? structuredClone(st.sizes) : fullSizes(), lace: st.lace || "" });
+// buckle = the part that is the buckle (customers pick gold, silver or black for it).
+const optsOf = st => ({ sizes: st.sizes ? structuredClone(st.sizes) : fullSizes(), lace: st.lace || "", buckle: st.buckle || "" });
+// Parts a customer doesn't colour with a swatch: the laces and the buckle.
+const HW = [{ k: "lace", zh: "鞋帶" }, { k: "buckle", zh: "釦子" }];
+const hwOf = o => HW.filter(h => o[h.k]).map(h => o[h.k]);
 const sizeText = sz => Object.entries(sz || fullSizes()).map(([g, [a, b]]) => `${SIZE_ZH[g]} ${a}–${b}`).join("・");
 function optsHtml(o, parts) {
   const sizes = Object.entries(SIZE_LIST).map(([g, list]) => {
@@ -1096,10 +1120,13 @@ function optsHtml(o, parts) {
       `<select class="field" data-g="${g}" data-end="1" aria-label="${SIZE_ZH[g]}最大尺寸"${r ? "" : " disabled"}>${pick(r ? r[1] : list[list.length - 1])}</select></div>`;
   }).join("");
   const keys = Object.keys(parts);
-  const lace = `<div class="opt-row lace"><label class="check"><input type="checkbox" data-lace${o.lace ? " checked" : ""}${keys.length > 1 || o.lace ? "" : " disabled"}>有鞋帶</label>` +
-    (o.lace ? `<span>鞋帶是</span><select class="field" data-lacepart aria-label="鞋帶是哪個部位">${keys.map(l => `<option value="${l}"${l === o.lace ? " selected" : ""}>部位 ${l.toUpperCase()}（${esc(parts[l])}）</option>`).join("")}</select>` : "") + `</div>` +
-    `<p class="small">${o.lace ? "這個部位在網站上換成「選擇鞋帶」，不會出現在 L / R 的配色裡。" : keys.length > 1 ? "有鞋帶的話，在線稿上把鞋帶塗成一個部位，再勾「有鞋帶」選是哪個部位。" : "有鞋帶的話，在線稿上把鞋帶也塗成一個部位（至少要有兩個部位）。"}</p>`;
-  return `<div><span class="label">尺寸範圍</span>${sizes}</div><div><span class="label">鞋帶</span>${lace}</div>`;
+  const hw = HW.map(({ k, zh }) => {
+    const free = keys.filter(l => !HW.some(h => h.k !== k && o[h.k] === l));  // a part can't be both laces and buckle
+    return `<div class="opt-row lace"><label class="check"><input type="checkbox" data-hw="${k}"${o[k] ? " checked" : ""}${free.length > 1 || o[k] ? "" : " disabled"}>有${zh}</label>` +
+      (o[k] ? `<span>${zh}是</span><select class="field" data-hwpart="${k}" aria-label="${zh}是哪個部位">${free.map(l => `<option value="${l}"${l === o[k] ? " selected" : ""}>部位 ${l.toUpperCase()}（${esc(parts[l])}）</option>`).join("")}</select>` : "") + `</div>` +
+      `<p class="small">${o[k] ? (k === "lace" ? "這個部位在網站上換成「選擇鞋帶」，不會出現在 L / R 的配色裡。" : "這個部位在網站上換成「選擇釦子」（金、銀、黑），不會出現在 L / R 的配色裡。") : keys.length > 1 ? `有${zh}的話，在線稿上把${zh}塗成一個部位，再勾「有${zh}」選是哪個部位。` : `有${zh}的話，在線稿上把${zh}也塗成一個部位（至少要有兩個部位）。`}</p>`;
+  });
+  return `<div><span class="label">尺寸範圍</span>${sizes}</div><div><span class="label">鞋帶</span>${hw[0]}</div><div><span class="label">釦子</span>${hw[1]}</div>`;
 }
 // One change in a settings block; returns false when the change was refused (it is put back).
 function optsChange(e, o, parts) {
@@ -1113,10 +1140,10 @@ function optsChange(e, o, parts) {
     const r = o.sizes[t.dataset.g], list = SIZE_LIST[t.dataset.g];
     r[+t.dataset.end] = t.value;
     if (list.indexOf(r[0]) > list.indexOf(r[1])) r.reverse();
-  } else if (t.matches("[data-lace]")) {
-    const keys = Object.keys(parts);
-    o.lace = t.checked ? keys[keys.length - 1] : "";
-  } else if (t.matches("[data-lacepart]")) o.lace = t.value;
+  } else if (t.matches("[data-hw]")) {
+    const k = t.dataset.hw, keys = Object.keys(parts).filter(l => !HW.some(h => h.k !== k && o[h.k] === l));
+    o[k] = t.checked ? keys[keys.length - 1] : "";
+  } else if (t.matches("[data-hwpart]")) o[t.dataset.hwpart] = t.value;
   return true;
 }
 // Each part shows in its own colour on the preview, so it is easy to check which area went where.
@@ -1160,15 +1187,21 @@ $("artIn").addEventListener("change", async e => {
   say($("artStatus"), "讀取線稿中…", "wait");
   try {
     // Several files can be chosen at once (one drawing per sole, say); their pages are read one after another.
-    const pages = [], choices = [];
+    const pages = [], choices = [], read = [];
     for (const file of files) {
       const buf = await file.arrayBuffer(), head = new TextDecoder().decode(buf.slice(0, 1024));
       let got;
       if (head.startsWith("%PDF") || /\.pdf$/i.test(file.name)) got = await LineArt.fromPdf(buf, await loadPdfjs());
       else if (/<svg[\s>]/i.test(head) || /\.svg$/i.test(file.name)) got = LineArt.fromSvg(new TextDecoder().decode(buf));
       else throw new Error(`「${file.name}」不是 PDF 或 SVG 檔。`);
+      read.push({ file, got });
+    }
+    // The painted drawing shows how many views a shoe has (top and side, or a top view per foot and the side);
+    // unpainted drawings (other soles) are split up the same way.
+    const k = Math.max(2, ...read.flatMap(r => r.got.flatMap(pg => LineArt.groups(pg).filter(g => g.painted).map(g => g.views))));
+    for (const { file, got } of read) {
       const base = file.name.replace(/\.[^.]+$/, ""), mine = [];
-      got.forEach(pg => { LineArt.groups(pg).forEach(g => mine.push({ page: pages.length, idx: g.idx, painted: g.painted, base })); pages.push(pg); });
+      got.forEach(pg => { LineArt.groups(pg, k).forEach(g => mine.push({ page: pages.length, idx: g.idx, painted: g.painted, views: g.views, base })); pages.push(pg); });
       mine.forEach((c, i) => c.label = files.length < 2 ? `第 ${choices.length + i + 1} 個` : mine.length > 1 ? `${base} ${i + 1}` : base);
       choices.push(...mine);
     }
@@ -1318,7 +1351,7 @@ function renderArtPreview() {
 }
 function renderArtOpts() {
   const parts = currentStyle().parts;
-  if (art.opts.lace && !parts[art.opts.lace]) art.opts.lace = "";
+  HW.forEach(({ k }) => { if (art.opts[k] && !parts[art.opts[k]]) art.opts[k] = ""; });
   $("artOpts").innerHTML = optsHtml(art.opts, parts);
 }
 $("artOpts").addEventListener("change", e => { if (art) { optsChange(e, art.opts, currentStyle().parts); renderArtOpts(); } });
@@ -1338,12 +1371,12 @@ $("artPublish").addEventListener("click", async () => {
   if (!name) { $("artName").focus(); return say($("artStatus"), "請先輸入鞋款名稱。", "bad"); }
   const st = currentStyle();
   if (!Object.keys(st.parts).length) return say($("artStatus"), "請至少把一種顏色設成部位。", "bad");
-  if (art.opts.lace && Object.keys(st.parts).length < 2) return say($("artStatus"), "鞋帶以外至少要有一個可換色的部位。", "bad");
+  if (Object.keys(st.parts).length <= hwOf(art.opts).length) return say($("artStatus"), "鞋帶、釦子以外至少要有一個可換色的部位。", "bad");
   if ([...STYLE_LIST, ...STYLE_OFF, ...stPending].some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
   const soles = soleList();
   if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、厚底）。", "bad");
   if (new Set(soles.map(s => s.name)).size < soles.length) return say($("artStatus"), "鞋底的名字不能重複。", "bad");
-  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
+  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), ...(art.opts.buckle ? { buckle: art.opts.buckle } : {}), ...(art.choices[art.at].views > 2 ? { views: art.choices[art.at].views } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
   if (!token) {
     // Trial: it joins the list on this page only, so ordering and deleting can be tried too.
     STYLE_LIST.push({ id, ...body, trial: true }); trialList = true;
@@ -1386,7 +1419,7 @@ async function loadStyles() {
   }
   for (const [id, want] of [...stSaving]) {
     const s = STYLE_LIST.find(x => x.id === id);
-    if (!s || JSON.stringify([s.sizes, s.lace || ""]) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
+    if (!s || JSON.stringify([s.sizes, s.lace || "", s.buckle || ""]) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
   }
   const listed = id => STYLE_LIST.some(s => s.id === id), off = id => STYLE_OFF.some(s => s.id === id);
   for (const id of [...stRemoving]) if (!listed(id) && !off(id)) { stRemoving.delete(id); say($("stListStatus"), "已刪除 ✓", "ok"); }
@@ -1405,7 +1438,7 @@ function renderStyleList() {
       : stMode === "hide" ? `<button class="act" type="button" data-hide="${s.id}">下架</button>` : "";
     const edit = stMode === "edit" && !isNew && !busy && !isOff;
     const move = stMode === "order" && !isNew && !isOff ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
-    const info = isNew || stShowing.has(s.id) ? "上架中…" : gone ? "刪除中…" : stHiding.has(s.id) ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
+    const info = isNew || stShowing.has(s.id) ? "上架中…" : gone ? "刪除中…" : stHiding.has(s.id) ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : k === s.buckle ? "（釦子）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
     return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
   };
   $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
@@ -1437,7 +1470,7 @@ $("stEditOpts").addEventListener("change", e => { if (stEditing) { optsChange(e,
 $("stEditCancel").addEventListener("click", () => { closeStEdit(); renderStyleList(); });
 $("stEditSave").addEventListener("click", async () => {
   const ed = stEditing; if (!ed) return;
-  const apply = st => { st.sizes = ed.opts.sizes; if (ed.opts.lace) st.lace = ed.opts.lace; else delete st.lace; return st; };
+  const apply = st => { st.sizes = ed.opts.sizes; HW.forEach(({ k }) => { if (ed.opts[k]) st[k] = ed.opts[k]; else delete st[k]; }); return st; };
   if (!token) {
     apply(STYLE_LIST.find(s => s.id === ed.id)); trialList = true; closeStEdit(); renderStyleList();
     return say($("stListStatus"), `試用模式：正式使用時，「${ed.name}」的設定會更新到網站。這次沒有改（只在這頁試用）。`, "wait");
@@ -1451,7 +1484,7 @@ $("stEditSave").addEventListener("click", async () => {
     const st = apply(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), c => c.charCodeAt(0)))));
     const r = await gh(`/contents/styles/${ed.id}.json`, { method: "PUT", body: { message: `Update style settings ${ed.name}`, content: b64utf8(JSON.stringify(st)), sha: file.sha } });
     if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
-    stSaving.set(ed.id, JSON.stringify([st.sizes, st.lace || ""]));
+    stSaving.set(ed.id, JSON.stringify([st.sizes, st.lace || "", st.buckle || ""]));
     closeStEdit(); renderStyleList();
     say($("stListStatus"), `「${ed.name}」的設定已儲存，網站更新中（約 1–2 分鐘）…`, "wait");
     watchStyles();
