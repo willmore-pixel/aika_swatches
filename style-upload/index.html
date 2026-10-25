@@ -1298,7 +1298,10 @@ function soleDiffOf(k) {
   if (!art.diffs.has(key)) {
     const c = art.choices[art.at];
     let d = null;
-    try { d = LineArt.soleDiff(art.pages[c.page], c.idx, art.choices[k].idx, cols, art.pages[art.choices[k].page]); } catch (err) { console.error(err); }
+    // Another drawing painted in the same part colours (the shoe redrawn on a thick sole, say): it is used whole.
+    const o = art.choices[k], op = art.pages[o.page], marks = o.painted ? LineArt.colours(op, o.idx).filter(x => x.marker).map(x => x.hex) : [];
+    if (marks.length && marks.every(h => cols.has(h))) d = { page: op, idx: o.idx, tile: LineArt.mainTile(op, o.idx, cols), whole: true };
+    else try { d = LineArt.soleDiff(art.pages[c.page], c.idx, o.idx, cols, op); } catch (err) { console.error(err); }
     art.diffs.set(key, d);
   }
   return art.diffs.get(key);
