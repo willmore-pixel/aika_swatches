@@ -1194,6 +1194,104 @@ function artMarkup(st, prefix, fills, active) {
 }
 const thumbSvg = (st, prefix) => `<svg viewBox="${st.viewBox}">${artMarkup(st, prefix, {})}</svg>`;
 
+// ---- Made here once, so customers' phones don't have to (AIKA PLAY uses them when a style has them) ----
+// st.seen: for each part shape (by item), the edge of what can be seen of it (its shape minus everything painted over
+// it except the laces), which is where the dashed outline round a chosen part goes. The same tracing as AIKA PLAY's.
+// st.thumb: the style card's small picture as AIKA PLAY would draw it (all parts white, beige laces, gold buckle).
+const TRACE_PX = 3;  // canvas pixels per drawing unit
+async function traceSeen(st, i) {
+  const it = st.items[i], [vx, vy, vw, vh] = st.viewBox.split(/[\s,]+/).map(Number), S = TRACE_PX;
+  const W = Math.ceil(vw * S), H = Math.ceil(vh * S);
+  const shape = q => `d="${q.d}"${q.t ? ` transform="${q.t}"` : ""}`;
+  const over = st.items.slice(i + 1).map(q => typeof q === "string"
+    ? q.replaceAll("__P__", "tr").replace(/fill="(?!none)[^"]*"/g, 'fill="#000"').replace(/stroke="(?!none)[^"]*"/g, 'stroke="none"')
+    : q.part === it.part || q.part === st.lace ? "" : `<path ${shape(q)} fill="#000"/>`).join("");
+  const own = `<path ${shape(it)} fill="#fff"${it.r ? ` fill-rule="${it.r}"` : ""}/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${vx} ${vy} ${vw} ${vh}"><defs>${(st.defs || "").replaceAll("__P__", "tr")}</defs>` +
+    (it.c ? `<g clip-path="url(#tr-${it.c})">${own}</g>` : own) + over + `</svg>`;
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(img, 0, 0, W, H);
+  const px = cx.getImageData(0, 0, W, H).data;
+  const f = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? 0 : px[(y * W + x) * 4] * px[(y * W + x) * 4 + 3] / 255;
+  // Marching squares: each crossing sits on a cell edge, and every edge belongs to two cells, so the pieces join into loops.
+  const at = new Map(), pts = new Map(), K = W + 2;
+  const hKey = (x, y) => ((y + 1) * K + x + 1) * 2, vKey = (x, y) => ((y + 1) * K + x + 1) * 2 + 1;
+  const cut = (a, b) => (128 - a) / (b - a);
+  const link = (a, b) => { (at.get(a) || at.set(a, []).get(a)).push(b); (at.get(b) || at.set(b, []).get(b)).push(a); };
+  for (let y = -1; y < H; y++) for (let x = -1; x < W; x++) {
+    const tl = f(x, y), tr = f(x + 1, y), br = f(x + 1, y + 1), bl = f(x, y + 1);
+    const k = (tl >= 128) * 8 + (tr >= 128) * 4 + (br >= 128) * 2 + (bl >= 128);
+    if (k === 0 || k === 15) continue;
+    const T = hKey(x, y), B = hKey(x, y + 1), L = vKey(x, y), R = vKey(x + 1, y);
+    if ((tl >= 128) !== (tr >= 128)) pts.set(T, [x + cut(tl, tr), y]);
+    if ((bl >= 128) !== (br >= 128)) pts.set(B, [x + cut(bl, br), y + 1]);
+    if ((tl >= 128) !== (bl >= 128)) pts.set(L, [x, y + cut(tl, bl)]);
+    if ((tr >= 128) !== (br >= 128)) pts.set(R, [x + 1, y + cut(tr, br)]);
+    ({ 1: [[L, B]], 2: [[B, R]], 3: [[L, R]], 4: [[T, R]], 5: [[T, L], [B, R]], 6: [[T, B]], 7: [[L, T]], 8: [[L, T]], 9: [[T, B]],
+       10: [[T, R], [L, B]], 11: [[T, R]], 12: [[L, R]], 13: [[B, R]], 14: [[L, B]] })[k].forEach(([a, b]) => link(a, b));
+  }
+  const toUser = ([x, y]) => [vx + (x + .5) / S, vy + (y + .5) / S];
+  const simplify = (p, tol) => {  // Ramer–Douglas–Peucker
+    if (p.length < 3) return p;
+    let m = 0, mi = 0; const [a, b] = [p[0], p[p.length - 1]], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+    for (let j = 1; j < p.length - 1; j++) { const d = Math.abs(dy * (p[j][0] - a[0]) - dx * (p[j][1] - a[1])) / len; if (d > m) { m = d; mi = j; } }
+    return m <= tol ? [a, b] : [...simplify(p.slice(0, mi + 1), tol).slice(0, -1), ...simplify(p.slice(mi), tol)];
+  };
+  const seen = new Set(), loops = [];
+  for (const start of at.keys()) {
+    if (seen.has(start)) continue;
+    const loop = []; let prev = null, cur = start;
+    while (cur !== undefined && !seen.has(cur)) {
+      seen.add(cur); loop.push(toUser(pts.get(cur)));
+      const nx = at.get(cur).find(n => n !== prev && !seen.has(n)); prev = cur; cur = nx;
+    }
+    if (loop.length < 12) continue;  // specks
+    const xs = loop.map(q => q[0]), ys = loop.map(q => q[1]);
+    // Slivers thinner than a drawing unit on average (a part's edge peeping out from under the sole's outline) are not
+    // something anyone can see, so they get no outline.
+    let area = 0, per = 0;
+    loop.forEach(([x1, y1], j) => { const [x2, y2] = loop[(j + 1) % loop.length]; area += x1 * y2 - x2 * y1; per += Math.hypot(x2 - x1, y2 - y1); });
+    if (Math.abs(area) / per < .5) continue;
+    loops.push({ loop, area: Math.abs(area), size: Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) });
+  }
+  // Leave out rings round tiny things painted on top, such as brogue holes, and specks next to the part's main area.
+  const big = Math.max(0, ...loops.map(l => l.size)), bigArea = Math.max(0, ...loops.map(l => l.area));
+  return loops.filter(l => l.size >= big * .06 && l.area >= bigArea * .002).map(({ loop }) => {
+    const half = Math.floor(loop.length / 2);
+    const out = [...simplify(loop.slice(0, half + 1), .08).slice(0, -1), ...simplify([...loop.slice(half), loop[0]], .08).slice(0, -1)];
+    return "M" + out.map(q => q[0].toFixed(2) + " " + q[1].toFixed(2)).join("L") + "Z";
+  }).join("");
+}
+async function seenOf(st) {
+  const seen = {};
+  for (let i = 0; i < st.items.length; i++) {
+    const it = st.items[i];
+    if (typeof it !== "string" && it.part !== st.lace && it.part !== st.buckle) seen[i] = await traceSeen(st, i);
+  }
+  return seen;
+}
+async function thumbOf(st) {
+  const W = 480, H = 360, fills = { ...(st.lace ? { [st.lace]: "#d9c6a5" } : {}), ...(st.buckle ? { [st.buckle]: "url(#th-buckle)" } : {}) };
+  const gold = `<linearGradient id="th-buckle" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="9" y2="9" spreadMethod="reflect"><stop offset="0" stop-color="#8a6a22"/><stop offset=".55" stop-color="#e8cf7a"/><stop offset="1" stop-color="#a7842f"/></linearGradient>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${st.viewBox}" width="${W}" height="${H}"><defs>${gold}</defs>${artMarkup(st, "th", fills)}</svg>`;
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, W, H); cx.drawImage(img, 0, 0, W, H);
+  return cv.toDataURL("image/webp", 0.82);
+}
+// Adds both to a style about to be saved, and the outlines to each sole that has its own drawing.
+async function addSpeedups(st) {
+  st.seen = await seenOf(st);
+  for (const so of st.soles || []) if (so.style) so.style.seen = await seenOf({ ...st, ...so.style, seen: undefined });
+  st.thumb = await thumbOf(st);
+  return st;
+}
+
 // ---- Reading the file ----
 let art = null;  // { pages, choices: [{ page, idx }], at, map, names, cols, showAll, active, fills, warn }
 let pdfjs = null;
@@ -1410,6 +1508,8 @@ $("artPublish").addEventListener("click", async () => {
   }
   $("artPublish").disabled = $("artRedo").disabled = true;
   try {
+    say($("artStatus"), "整理中…", "wait");
+    await addSpeedups(body);
     say($("artStatus"), "上傳中…", "wait");
     // Path numbers to 1/100 pt: no visible change, a much smaller file for customers' phones to load.
     const json = JSON.stringify(body).replace(/ d=\\"[^"\\]*\\"/g, m => m.replace(/-?\d+\.\d{3,}/g, n => String(+(+n).toFixed(2))));
@@ -1509,7 +1609,7 @@ $("stEditSave").addEventListener("click", async () => {
     const f = await gh(`/contents/styles/${ed.id}.json`);
     if (!f.ok) throw new Error(f.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `鞋款庫裡找不到「${ed.name}」。`);
     const file = await f.json();
-    const st = apply(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), c => c.charCodeAt(0)))));
+    const st = await addSpeedups(apply(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), c => c.charCodeAt(0))))));
     const r = await gh(`/contents/styles/${ed.id}.json`, { method: "PUT", body: { message: `Update style settings ${ed.name}`, content: b64utf8(JSON.stringify(st)), sha: file.sha } });
     if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
     stSaving.set(ed.id, JSON.stringify([st.sizes, st.lace || "", st.buckle || "", st.only || {}, st.up || []]));
