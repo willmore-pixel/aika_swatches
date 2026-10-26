@@ -106,6 +106,10 @@ select.field { appearance: none; -webkit-appearance: none; padding: 9px 12px; fo
 .opt-row + .opt-row { margin-top: 8px; }
 .opt-row.lace { grid-template-columns: 92px auto 1fr; }
 .opt-row.mat { grid-template-columns: 1fr 1fr; }
+.opt-row.colours { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-left: 4px; }
+.opt-row.colours > span { flex-basis: 100%; }
+.opt-row.one { display: block; }
+.dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line); vertical-align: -3px; }
 .opt-row.mat > span { grid-column: 1 / -1; }
 .opt-row span { font-size: 14px; font-weight: 800; color: var(--muted); }
 .opt-row select.field { padding: 9px 26px 9px 10px; }
@@ -1119,7 +1123,24 @@ const fullSizes = () => Object.fromEntries(Object.entries(SIZE_LIST).map(([g, l]
 // buckle = the part that is the buckle (customers pick gold, silver or black for it).
 // only = parts that take just one kind of swatch: { a: "leather", c: "fabric" } (the rest take both).
 // up = parts where a print's top points up (counters, heels…); on the rest it points right, towards the heel.
-const optsOf = st => ({ sizes: st.sizes ? structuredClone(st.sizes) : fullSizes(), lace: st.lace || "", buckle: st.buckle || "", only: { ...(st.only || {}) }, up: [...(st.up || [])] });
+// whole = made in whole sizes only (no half sizes). laces = the lace colours this style comes in (left out: all of them).
+const optsOf = st => ({ sizes: st.sizes ? structuredClone(st.sizes) : fullSizes(), whole: !!st.whole, lace: st.lace || "", laces: [...(st.laces || [])], buckle: st.buckle || "", only: { ...(st.only || {}) }, up: [...(st.up || [])] });
+// Lace colours AIKA PLAY offers, in its order.
+const LACE_COLOURS = { Beige: ["米色", "#d9c6a5"], Coffee: ["咖啡", "#6b4a35"], Black: ["黑", "#1c1c1e"], White: ["白", "#ffffff"] };
+const lacesOf = o => { const l = (o.laces || []).filter(n => LACE_COLOURS[n]); return l.length ? l : Object.keys(LACE_COLOURS); };
+const isWhole = v => !v.includes(".");
+// The settings a style's file keeps (only what differs from the defaults), and the key that says the site has them.
+function settingsOf(o, parts) {
+  const out = { sizes: o.sizes }, only = onlyOf(o, parts), up = upOf(o, parts), laces = lacesOf(o);
+  if (o.whole) out.whole = true;
+  HW.forEach(({ k }) => { if (o[k]) out[k] = o[k]; });
+  if (o.lace && laces.length < Object.keys(LACE_COLOURS).length) out.laces = laces;
+  if (Object.keys(only).length) out.only = only;
+  if (up.length) out.up = up;
+  return out;
+}
+const SET_KEYS = ["sizes", "whole", "lace", "laces", "buckle", "only", "up"];
+const settingsKey = st => JSON.stringify(SET_KEYS.map(k => st[k] ?? null));
 const ONLY = [["", "皮料、布料都可以"], ["leather", "只用皮料"], ["fabric", "只用布料"]];
 const onlyOf = (o, parts) => Object.fromEntries(Object.entries(o.only).filter(([l, v]) => v && parts[l] && !hwOf(o).includes(l)));
 const UP = [["", "花布向右 →"], ["up", "花布向上 ↑"]];
@@ -1127,20 +1148,22 @@ const upOf = (o, parts) => o.up.filter(l => parts[l] && !hwOf(o).includes(l)).so
 // Parts a customer doesn't colour with a swatch: the laces and the buckle.
 const HW = [{ k: "lace", zh: "鞋帶" }, { k: "buckle", zh: "釦子" }];
 const hwOf = o => HW.filter(h => o[h.k]).map(h => o[h.k]);
-const sizeText = sz => Object.entries(sz || fullSizes()).map(([g, [a, b]]) => `${SIZE_ZH[g]} ${a}–${b}`).join("・");
+const sizeText = (sz, whole) => Object.entries(sz || fullSizes()).map(([g, [a, b]]) => `${SIZE_ZH[g]} ${a}–${b}`).join("・") + (whole ? "（只有整號）" : "");
 function optsHtml(o, parts) {
   const sizes = Object.entries(SIZE_LIST).map(([g, list]) => {
-    const r = o.sizes[g], pick = cur => list.map(v => `<option${v === cur ? " selected" : ""}>${v}</option>`).join("");
+    const r = o.sizes[g], pick = cur => list.filter(v => !o.whole || isWhole(v)).map(v => `<option${v === cur ? " selected" : ""}>${v}</option>`).join("");
     return `<div class="opt-row"><label class="check"><input type="checkbox" data-g="${g}"${r ? " checked" : ""}>${SIZE_ZH[g]}</label>` +
       `<select class="field" data-g="${g}" data-end="0" aria-label="${SIZE_ZH[g]}最小尺寸"${r ? "" : " disabled"}>${pick(r ? r[0] : list[0])}</select><span>到</span>` +
       `<select class="field" data-g="${g}" data-end="1" aria-label="${SIZE_ZH[g]}最大尺寸"${r ? "" : " disabled"}>${pick(r ? r[1] : list[list.length - 1])}</select></div>`;
-  }).join("");
+  }).join("") + `<div class="opt-row one"><label class="check"><input type="checkbox" data-whole${o.whole ? " checked" : ""}>只有整號（沒有半號）</label></div>`;
   const keys = Object.keys(parts);
   const hw = HW.map(({ k, zh }) => {
     const free = keys.filter(l => !HW.some(h => h.k !== k && o[h.k] === l));  // a part can't be both laces and buckle
     return `<div class="opt-row lace"><label class="check"><input type="checkbox" data-hw="${k}"${o[k] ? " checked" : ""}${free.length > 1 || o[k] ? "" : " disabled"}>有${zh}</label>` +
       (o[k] ? `<span>${zh}是</span><select class="field" data-hwpart="${k}" aria-label="${zh}是哪個部位">${free.map(l => `<option value="${l}"${l === o[k] ? " selected" : ""}>部位 ${l.toUpperCase()}（${esc(parts[l])}）</option>`).join("")}</select>` : "") + `</div>` +
-      `<p class="small">${o[k] ? (k === "lace" ? "這個部位在網站上換成「選擇鞋帶」，不會出現在 L / R 的配色裡。" : "這個部位在網站上換成「選擇釦子」（金、銀、黑），不會出現在 L / R 的配色裡。") : keys.length > 1 ? `有${zh}的話，在線稿上把${zh}塗成一個部位，再勾「有${zh}」選是哪個部位。` : `有${zh}的話，在線稿上把${zh}也塗成一個部位（至少要有兩個部位）。`}</p>`;
+      (k === "lace" && o.lace ? `<div class="opt-row colours"><span>鞋帶顏色</span>${Object.entries(LACE_COLOURS).map(([n, [zh, hex]]) =>
+        `<label class="check"><input type="checkbox" data-lacec="${n}"${lacesOf(o).includes(n) ? " checked" : ""}><i class="dot" style="background:${hex}"></i>${zh} ${n}</label>`).join("")}</div>` : "") +
+      `<p class="small">${o[k] ? (k === "lace" ? "這個部位在網站上換成「選擇鞋帶」，不會出現在 L / R 的配色裡。客人只能選上面勾的鞋帶顏色。" : "這個部位在網站上換成「選擇釦子」（金、銀、黑），不會出現在 L / R 的配色裡。") : keys.length > 1 ? `有${zh}的話，在線稿上把${zh}塗成一個部位，再勾「有${zh}」選是哪個部位。` : `有${zh}的話，在線稿上把${zh}也塗成一個部位（至少要有兩個部位）。`}</p>`;
   });
   const mat = keys.filter(l => !hwOf(o).includes(l)).map(l => `<div class="opt-row mat"><span>部位 ${l.toUpperCase()}（${esc(parts[l])}）</span>` +
     `<select class="field" data-only="${l}" aria-label="部位 ${l.toUpperCase()} 的材質">${ONLY.map(([v, zh]) => `<option value="${v}"${(o.only[l] || "") === v ? " selected" : ""}>${zh}</option>`).join("")}</select>` +
@@ -1160,6 +1183,15 @@ function optsChange(e, o, parts) {
     const r = o.sizes[t.dataset.g], list = SIZE_LIST[t.dataset.g];
     r[+t.dataset.end] = t.value;
     if (list.indexOf(r[0]) > list.indexOf(r[1])) r.reverse();
+  } else if (t.matches("[data-whole]")) {
+    o.whole = t.checked;
+    // Move a half-size end of each range onto the nearest whole size inside it.
+    if (o.whole) Object.entries(o.sizes).forEach(([g, r]) => { const l = SIZE_LIST[g].filter(isWhole);
+      r[0] = l.find(v => +v >= +r[0]) || l[l.length - 1]; r[1] = [...l].reverse().find(v => +v <= +r[1]) || l[0]; if (+r[0] > +r[1]) r[1] = r[0]; });
+  } else if (t.matches("[data-lacec]")) {
+    const on = lacesOf(o).filter(n => n !== t.dataset.lacec).concat(t.checked ? [t.dataset.lacec] : []);
+    if (!on.length) { t.checked = true; return false; }  // at least one colour
+    o.laces = Object.keys(LACE_COLOURS).filter(n => on.includes(n));
   } else if (t.matches("[data-hw]")) {
     const k = t.dataset.hw, keys = Object.keys(parts).filter(l => !HW.some(h => h.k !== k && o[h.k] === l));
     o[k] = t.checked ? keys[keys.length - 1] : "";
@@ -1197,7 +1229,7 @@ const thumbSvg = (st, prefix) => `<svg viewBox="${st.viewBox}">${artMarkup(st, p
 // ---- Made here once, so customers' phones don't have to (AIKA PLAY uses them when a style has them) ----
 // st.seen: for each part shape (by item), the edge of what can be seen of it (its shape minus everything painted over
 // it except the laces), which is where the dashed outline round a chosen part goes. The same tracing as AIKA PLAY's.
-// st.thumb: the style card's small picture as AIKA PLAY would draw it (all parts white, beige laces, gold buckle).
+// st.thumb: the style card's small picture as AIKA PLAY would draw it (all parts white, first lace colour (beige), gold buckle).
 const TRACE_PX = 3;  // canvas pixels per drawing unit
 async function traceSeen(st, i) {
   const it = st.items[i], [vx, vy, vw, vh] = st.viewBox.split(/[\s,]+/).map(Number), S = TRACE_PX;
@@ -1274,7 +1306,7 @@ async function seenOf(st) {
   return seen;
 }
 async function thumbOf(st) {
-  const W = 480, H = 360, fills = { ...(st.lace ? { [st.lace]: "#d9c6a5" } : {}), ...(st.buckle ? { [st.buckle]: "url(#th-buckle)" } : {}) };
+  const W = 480, H = 360, fills = { ...(st.lace ? { [st.lace]: LACE_COLOURS[lacesOf(st)[0]][1] } : {}), ...(st.buckle ? { [st.buckle]: "url(#th-buckle)" } : {}) };
   const gold = `<linearGradient id="th-buckle" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="9" y2="9" spreadMethod="reflect"><stop offset="0" stop-color="#8a6a22"/><stop offset=".55" stop-color="#e8cf7a"/><stop offset="1" stop-color="#a7842f"/></linearGradient>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${st.viewBox}" width="${W}" height="${H}"><defs>${gold}</defs>${artMarkup(st, "th", fills)}</svg>`;
   const img = new Image();
@@ -1499,7 +1531,7 @@ $("artPublish").addEventListener("click", async () => {
   const soles = soleList();
   if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、厚底）。", "bad");
   if (new Set(soles.map(s => s.name)).size < soles.length) return say($("artStatus"), "鞋底的名字不能重複。", "bad");
-  const id = "s" + Date.now().toString(36), body = { ...st, sizes: art.opts.sizes, ...(art.opts.lace ? { lace: art.opts.lace } : {}), ...(art.opts.buckle ? { buckle: art.opts.buckle } : {}), ...(Object.keys(onlyOf(art.opts, st.parts)).length ? { only: onlyOf(art.opts, st.parts) } : {}), ...(upOf(art.opts, st.parts).length ? { up: upOf(art.opts, st.parts) } : {}), ...(art.choices[art.at].views > 2 ? { views: art.choices[art.at].views } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
+  const id = "s" + Date.now().toString(36), body = { ...st, ...settingsOf(art.opts, st.parts), ...(art.choices[art.at].views > 2 ? { views: art.choices[art.at].views } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
   if (!token) {
     // Trial: it joins the list on this page only, so ordering and deleting can be tried too.
     STYLE_LIST.push({ id, ...body, trial: true }); trialList = true;
@@ -1545,7 +1577,7 @@ async function loadStyles() {
   }
   for (const [id, want] of [...stSaving]) {
     const s = STYLE_LIST.find(x => x.id === id);
-    if (!s || JSON.stringify([s.sizes, s.lace || "", s.buckle || "", s.only || {}, s.up || []]) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
+    if (!s || settingsKey(s) === want) { stSaving.delete(id); say($("stListStatus"), "新的設定已上線 ✓", "ok"); }
   }
   const listed = id => STYLE_LIST.some(s => s.id === id), off = id => STYLE_OFF.some(s => s.id === id);
   for (const id of [...stRemoving]) if (!listed(id) && !off(id)) { stRemoving.delete(id); say($("stListStatus"), "已刪除 ✓", "ok"); }
@@ -1564,7 +1596,7 @@ function renderStyleList() {
       : stMode === "hide" ? `<button class="act" type="button" data-hide="${s.id}">下架</button>` : "";
     const edit = stMode === "edit" && !isNew && !busy && !isOff;
     const move = stMode === "order" && !isNew && !isOff ? `<div class="move"><button type="button" data-mv="${i}" data-d="-1" aria-label="往前"${i ? "" : " disabled"}>◀</button><button type="button" data-mv="${i}" data-d="1" aria-label="往後"${i < list.length - 1 ? "" : " disabled"}>▶</button></div>` : "";
-    const info = isNew || stShowing.has(s.id) ? "上架中…" : gone ? "刪除中…" : stHiding.has(s.id) ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : k === s.buckle ? "（釦子）" : "")).join("・") + "<br>" + sizeText(s.sizes) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
+    const info = isNew || stShowing.has(s.id) ? "上架中…" : gone ? "刪除中…" : stHiding.has(s.id) ? "下架中…" : stSaving.has(s.id) ? "設定更新中…" : Object.entries(s.parts).map(([k, n]) => esc(n) + (k === s.lace ? "（鞋帶）" : k === s.buckle ? "（釦子）" : "")).join("・") + "<br>" + sizeText(s.sizes, s.whole) + (s.soles ? "<br>鞋底：" + s.soles.map(x => esc(x.name)).join("・") : "");
     return `<${edit ? `button type="button" data-edit="${s.id}"` : "div"} class="st-card${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${stEditing && stEditing.id === s.id ? " editing" : ""}"><div class="thumb">${thumbSvg(s, "st" + s.id)}</div>${x}${esc(s.name)}<small>${info}${s.trial ? "（試用）" : ""}</small>${move}</${edit ? "button" : "div"}>`;
   };
   $("stList").innerHTML = list.map((s, i) => card(s, i, false)).join("") + stPending.map(s => card(s, 0, true)).join("");
@@ -1582,7 +1614,7 @@ let stEditing = null;  // { id, name, parts, opts }
 const stSaving = new Map();  // id -> settings sent, until the site shows them
 $("editStyles").addEventListener("click", () => {
   stMode = stMode === "edit" ? "" : "edit"; stArmed = null; newOrder = null; closeStEdit();
-  say($("stListStatus"), stMode === "edit" ? "點一個鞋款，改它的尺寸範圍和鞋帶。" : "", "wait");
+  say($("stListStatus"), stMode === "edit" ? "點一個鞋款，改它的尺寸範圍、鞋帶和材質。" : "", "wait");
   renderStyleList();
 });
 function closeStEdit() { stEditing = null; $("stEdit").hidden = true; }
@@ -1596,9 +1628,7 @@ $("stEditOpts").addEventListener("change", e => { if (stEditing) { optsChange(e,
 $("stEditCancel").addEventListener("click", () => { closeStEdit(); renderStyleList(); });
 $("stEditSave").addEventListener("click", async () => {
   const ed = stEditing; if (!ed) return;
-  const apply = st => { st.sizes = ed.opts.sizes; HW.forEach(({ k }) => { if (ed.opts[k]) st[k] = ed.opts[k]; else delete st[k]; });
-    const only = onlyOf(ed.opts, st.parts); if (Object.keys(only).length) st.only = only; else delete st.only;
-    const up = upOf(ed.opts, st.parts); if (up.length) st.up = up; else delete st.up; return st; };
+  const apply = st => { SET_KEYS.forEach(k => delete st[k]); return Object.assign(st, settingsOf(ed.opts, st.parts)); };
   if (!token) {
     apply(STYLE_LIST.find(s => s.id === ed.id)); trialList = true; closeStEdit(); renderStyleList();
     return say($("stListStatus"), `試用模式：正式使用時，「${ed.name}」的設定會更新到網站。這次沒有改（只在這頁試用）。`, "wait");
@@ -1612,7 +1642,7 @@ $("stEditSave").addEventListener("click", async () => {
     const st = await addSpeedups(apply(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), c => c.charCodeAt(0))))));
     const r = await gh(`/contents/styles/${ed.id}.json`, { method: "PUT", body: { message: `Update style settings ${ed.name}`, content: b64utf8(JSON.stringify(st)), sha: file.sha } });
     if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${r.status}），請再試一次。`);
-    stSaving.set(ed.id, JSON.stringify([st.sizes, st.lace || "", st.buckle || "", st.only || {}, st.up || []]));
+    stSaving.set(ed.id, settingsKey(st));
     closeStEdit(); renderStyleList();
     say($("stListStatus"), `「${ed.name}」的設定已儲存，網站更新中（約 1–2 分鐘）…`, "wait");
     watchStyles();
