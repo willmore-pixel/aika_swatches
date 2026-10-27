@@ -1,6 +1,6 @@
 """Build the swatch site into _site/: every photo in leather/ and canvas/,
 cropped to a centre square, resized, and listed in swatches.json (the file name, minus extension, is the swatch's name),
-plus the shoe styles in styles/, listed in styles.json.
+plus the shoe styles in styles/, listed in styles.json. Each swatch has its size in cm (sizes.json, else 30).
 下架 (taken off the shelf) items stay in the repo but are listed in hidden.json (swatches, as "kind/name")
 or styles/hidden.json (style ids): customers don't see them, and the upload pages read them from
 swatches-hidden.json / styles-hidden.json so they can be put back."""
@@ -17,7 +17,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "_site"
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
-SIZE = 1024  # shown as a 30 cm square on the shoe, so keep enough detail
+SIZE = 1024  # shown on the shoe as a square of up to 30 cm, so keep enough detail
 
 def read_list(path):
     try:
@@ -29,6 +29,11 @@ shutil.rmtree(OUT, ignore_errors=True)
 (OUT / "s").mkdir(parents=True)
 
 hidden_sw = read_list(ROOT / "hidden.json")
+# sizes.json: how many cm each swatch photo stands for, as {"kind/name": cm} (set by the upload page; left out = 30 cm).
+try:
+    sizes = json.loads((ROOT / "sizes.json").read_text(encoding="utf-8"))
+except Exception:
+    sizes = {}
 swatches, swatches_hidden = [], []
 for kind in ("leather", "canvas"):
     for src in sorted((ROOT / kind).iterdir()):
@@ -43,7 +48,7 @@ for kind in ("leather", "canvas"):
         # Named by a hash of the original path so a swatch keeps its address (and customers' saved picks) between builds.
         name = f"s/{kind}-{hashlib.md5(src.name.encode()).hexdigest()[:10]}.jpg"
         img.save(OUT / name, quality=85)
-        sw = {"name": src.stem, "kind": kind, "file": name}
+        sw = {"name": src.stem, "kind": kind, "file": name, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
         (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
 
 # Shoe styles (line drawings made into the studio's format by the upload page), one styles/<id>.json each.
