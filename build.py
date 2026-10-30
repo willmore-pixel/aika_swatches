@@ -35,7 +35,8 @@ try:
 except Exception:
     sizes = {}
 # order.json: the order customers see the swatches in, as ["kind/name", ...] (set with 排序 on the upload page);
-# swatches it leaves out (new uploads) follow, by name.
+# swatches it leaves out (new ones not uploaded through the page) come first, by name. The upload page puts each
+# new swatch at the front of order.json itself.
 try:
     sw_order = json.loads((ROOT / "order.json").read_text(encoding="utf-8"))
 except Exception:
@@ -58,7 +59,7 @@ for kind in ("leather", "canvas"):
         sw = {"name": src.stem, "kind": kind, "file": name, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
         (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
 
-by_order = lambda s: (("leather", "canvas").index(s["kind"]), sw_rank.get(f"{s['kind']}/{s['name']}", len(sw_rank)))
+by_order = lambda s: (("leather", "canvas").index(s["kind"]), sw_rank.get(f"{s['kind']}/{s['name']}", -1))
 swatches.sort(key=by_order)
 swatches_hidden.sort(key=by_order)
 

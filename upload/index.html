@@ -265,6 +265,9 @@ $("publish").addEventListener("click", async () => {
     const r = await gh(`/contents/${encodeURIComponent(kind)}/${encodeURIComponent(name + ".jpg")}`, { method: "PUT", body: { message: `Add swatch ${name} (${kind})`, content: b64 } });
     if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `上傳失敗（${r.status}），請再試一次。`);
     await editJson("sizes.json", {}, m => ({ ...m, [`${kind}/${name}`]: shotCm }), `Swatch ${name} (${kind}) is ${shotCm} cm`);
+    // A new swatch goes first (with no order.json yet, ahead of the order customers see now).
+    const key = `${kind}/${name}`;
+    await editJson("order.json", [], old => [key, ...(old.length ? old : SHOP.map(keyOf)).filter(k => k !== key)], `Swatch ${name} (${kind}) goes first`);
     pending.push({ name, kind, cm: shotCm, url: $("out").toDataURL("image/jpeg", 0.6) });
     haveShot = false; $("name").value = ""; $("editCard").hidden = true; $("pickers").hidden = false;
     say($("status"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
@@ -354,7 +357,7 @@ function shownOrder() {
   const want = draft || ordered;
   if (!want) return SHOP;
   const rank = new Map(want.map((k, i) => [k, i]));
-  return [...SHOP].sort((a, b) => (rank.get(keyOf(a)) ?? 1e9) - (rank.get(keyOf(b)) ?? 1e9));
+  return [...SHOP].sort((a, b) => (rank.get(keyOf(a)) ?? -1) - (rank.get(keyOf(b)) ?? -1));
 }
 $("list").addEventListener("click", e => {
   const b = e.target.closest("[data-mv]"); if (!b || !draft) return;
