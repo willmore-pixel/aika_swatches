@@ -34,6 +34,13 @@ try:
     sizes = json.loads((ROOT / "sizes.json").read_text(encoding="utf-8"))
 except Exception:
     sizes = {}
+# order.json: the order customers see the swatches in, as ["kind/name", ...] (set with 排序 on the upload page);
+# swatches it leaves out (new uploads) follow, by name.
+try:
+    sw_order = json.loads((ROOT / "order.json").read_text(encoding="utf-8"))
+except Exception:
+    sw_order = []
+sw_rank = {k: i for i, k in enumerate(sw_order)}
 swatches, swatches_hidden = [], []
 for kind in ("leather", "canvas"):
     for src in sorted((ROOT / kind).iterdir()):
@@ -50,6 +57,10 @@ for kind in ("leather", "canvas"):
         img.save(OUT / name, quality=85)
         sw = {"name": src.stem, "kind": kind, "file": name, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
         (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
+
+by_order = lambda s: (("leather", "canvas").index(s["kind"]), sw_rank.get(f"{s['kind']}/{s['name']}", len(sw_rank)))
+swatches.sort(key=by_order)
+swatches_hidden.sort(key=by_order)
 
 # Shoe styles (line drawings made into the studio's format by the upload page), one styles/<id>.json each.
 # styles/order.json lists ids in the order customers see them; any style it leaves out follows, oldest first.
