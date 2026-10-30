@@ -119,6 +119,13 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
       <div class="preview"><canvas id="out" width="1024" height="1024"></canvas></div>
       <p class="small" id="shotSize"></p>
       <div>
+        <span class="label">照片處理</span>
+        <div class="seg" id="seams">
+          <button type="button" data-seam="0" aria-pressed="true">原圖</button>
+          <button type="button" data-seam="1" aria-pressed="false">無縫處理 2+</button>
+        </div>
+      </div>
+      <div>
         <span class="label">種類</span>
         <div class="seg" id="kinds">
           <button type="button" data-kind="leather" aria-pressed="true">皮革</button>
@@ -215,11 +222,17 @@ $("kinds").addEventListener("click", e => {
 const cleanName = s => s.replace(/[\\/:*?"<>|#%\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
 
 // ---- The chosen square becomes a 1024 px JPEG (the size the swatch site keeps), shown on the shoe as camCm x camCm
-// (kept in sizes.json). Under 30 cm it repeats on the shoe, so it is made seamless with method 2+ first. ----
+// (kept in sizes.json). It goes up as the original photo unless 無縫處理 2+ is chosen (the shop wants the original by default). ----
+let rawShot = null;
+function showShot(seam) {
+  $("seams").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.seam === (seam ? "1" : "0")));
+  $("out").getContext("2d").drawImage(seam ? makeSeamless(rawShot, 1024) : rawShot, 0, 0);
+}
+$("seams").addEventListener("click", e => { const b = e.target.closest("[data-seam]"); if (b && rawShot) showShot(b.dataset.seam === "1"); });
 function setShot(src, sx, sy, side) {
-  const c = document.createElement("canvas"); c.width = c.height = 1024;
-  c.getContext("2d").drawImage(src, sx, sy, side, side, 0, 0, 1024, 1024);
-  $("out").getContext("2d").drawImage(camCm < 30 ? makeSeamless(c, 1024) : c, 0, 0);
+  rawShot = document.createElement("canvas"); rawShot.width = rawShot.height = 1024;
+  rawShot.getContext("2d").drawImage(src, sx, sy, side, side, 0, 0, 1024, 1024);
+  showShot(false);
   haveShot = true; shotCm = camCm;
   $("shotSize").textContent = `這張代表 ${shotCm} × ${shotCm} cm，鞋子上會照這個大小重複鋪。`;
   $("editCard").hidden = false; $("pickers").hidden = true;
