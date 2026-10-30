@@ -60,6 +60,12 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .sw .act { position: absolute; top: -6px; right: -6px; height: 24px; padding: 0 9px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 12px; line-height: 24px; font-weight: 900; }
 .sw .act.up { background: var(--ok); color: #fff; }
 .off i { filter: grayscale(.7); opacity: .7; }
+/* 排序: ◀ ▶ under each swatch move it one place within its kind. */
+.grp { grid-column: 1 / -1; margin: 6px 0 -2px; font-size: 13px; font-weight: 900; color: var(--muted); }
+.mv { display: flex; justify-content: space-between; gap: 6px; }
+.mv button { flex: 1; height: 30px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 900; padding: 0; }
+.mv button:disabled { background: var(--tile); color: var(--line); }
+.sw.moved i { border-color: var(--accent); }
 .hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
@@ -144,7 +150,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -259,6 +265,9 @@ $("publish").addEventListener("click", async () => {
     const r = await gh(`/contents/${encodeURIComponent(kind)}/${encodeURIComponent(name + ".jpg")}`, { method: "PUT", body: { message: `Add swatch ${name} (${kind})`, content: b64 } });
     if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : r.status === 403 || r.status === 404 ? "這把金鑰沒有寫入權限。" : `上傳失敗（${r.status}），請再試一次。`);
     await editJson("sizes.json", {}, m => ({ ...m, [`${kind}/${name}`]: shotCm }), `Swatch ${name} (${kind}) is ${shotCm} cm`);
+    // A new swatch goes first (with no order.json yet, ahead of the order customers see now).
+    const key = `${kind}/${name}`;
+    await editJson("order.json", [], old => [key, ...(old.length ? old : SHOP.map(keyOf)).filter(k => k !== key)], `Swatch ${name} (${kind}) goes first`);
     pending.push({ name, kind, cm: shotCm, url: $("out").toDataURL("image/jpeg", 0.6) });
     haveShot = false; $("name").value = ""; $("editCard").hidden = true; $("pickers").hidden = false;
     say($("status"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
@@ -293,35 +302,90 @@ async function loadShop() {
   const nameOf = key => key.split("/").slice(1).join("/");
   for (const key of [...removing]) if (!listed(key) && !off(key)) { removing.delete(key); say($("listStatus"), `「${nameOf(key)}」已刪除 ✓`, "ok"); }
   for (const key of [...hiding]) if (off(key)) { hiding.delete(key); say($("listStatus"), `「${nameOf(key)}」已下架 ✓ 客人看不到了。`, "ok"); }
+  if (sorting && ordered) {
+    const now = SHOP.map(keyOf), want = ordered.filter(k => now.includes(k));
+    if (now.filter(k => want.includes(k)).join("\n") === want.join("\n")) { sorting = false; ordered = null; say($("listStatus"), "新的順序已上線 ✓ 客人重新整理網站就看得到。", "ok"); }
+  }
   for (const key of [...showing]) if (listed(key)) { showing.delete(key); say($("listStatus"), `「${nameOf(key)}」已重新上架 ✓`, "ok"); }
   renderList();
 }
 function renderList() {
-  const cell = (n, k, url, isNew, isOff, cm) => {
+  const cell = (n, k, url, isNew, isOff, cm, mv) => {
     const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key);
     const btn = isNew || busy ? ""
       : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
       : isOff ? `<button class="act up" type="button" data-show="${esc(key)}">上架</button>`
       : mode === "hide" ? `<button class="act" type="button" data-hide="${esc(key)}">下架</button>` : "";
     const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : `${KIND_NAME[k]} · ${cm || 30} cm`;
-    return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}"><i style="background-image:url('${url}')"></i>${btn}${esc(n)}<br>${info}</div>`;
+    const arrows = mv ? `<div class="mv"><button type="button" data-mv="-1" data-key="${esc(key)}" aria-label="往前"${mv.first ? " disabled" : ""}>◀</button><button type="button" data-mv="1" data-key="${esc(key)}" aria-label="往後"${mv.last ? " disabled" : ""}>▶</button></div>` : "";
+    return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${mv && moved.has(key) ? " moved" : ""}"><i style="background-image:url('${url}')"></i>${btn}${arrows}${esc(n)}<br>${info}</div>`;
   };
+  // Customers see the swatches in this order, 皮革 first, then 布樣.
+  const shop = shownOrder();
   $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
-    [...SHOP].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, false, s.cm)).join("");
+    ["leather", "canvas"].map(k => {
+      const list = shop.filter(s => s.kind === k);
+      return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map((s, i) => cell(s.name, s.kind, SITE + s.file, false, false, s.cm,
+        mode === "sort" && { first: i === 0, last: i === list.length - 1 })).join("") : "";
+    }).join("");
   $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, true, s.cm)).join("");
   $("offWrap").hidden = !OFF.length;
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
 // ---- 下架 shows a 下架 button on each swatch (one tap, it can be put back); 刪除 shows an ×: tap it, then tap again to confirm (no pop-ups). ----
-let mode = "", armedKey = null;  // mode: "" | "hide" | "delete"
+let mode = "", armedKey = null;  // mode: "" | "sort" | "hide" | "delete"
 const removing = new Set(), hiding = new Set(), showing = new Set();  // "kind/name" sent to the repo, until the swatch site shows the change
 function setMode(m) {
+  const wasSort = mode === "sort";
   mode = mode === m ? "" : m; armedKey = null;
+  if (mode === "sort") { draft = shownOrder().map(keyOf); moved.clear(); }
+  $("sortList").textContent = mode === "sort" ? "完成" : "排序";
   $("hideList").textContent = mode === "hide" ? "完成" : "下架";
   $("editList").textContent = mode === "delete" ? "完成" : "刪除";
-  say($("listStatus"), mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。" : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
+  say($("listStatus"), mode === "sort" ? "按色卡下面的 ◀ ▶ 往前、往後移。排好了按右上角「完成」儲存。"
+    : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
+    : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
+  if (wasSort && draft) saveOrder();  // leaving 排序 saves the new order (and says so)
   renderList();
 }
+// ---- 排序: the order lives in order.json in the repo ("kind/name", customers' order). While sorting, draft holds it;
+// after saving, ordered keeps showing it until the swatch site has been rebuilt with it. ----
+const keyOf = s => s.kind + "/" + s.name;
+let draft = null, ordered = null;
+const moved = new Set();
+function shownOrder() {
+  const want = draft || ordered;
+  if (!want) return SHOP;
+  const rank = new Map(want.map((k, i) => [k, i]));
+  return [...SHOP].sort((a, b) => (rank.get(keyOf(a)) ?? -1) - (rank.get(keyOf(b)) ?? -1));
+}
+$("list").addEventListener("click", e => {
+  const b = e.target.closest("[data-mv]"); if (!b || !draft) return;
+  const key = b.dataset.key, kind = key.split("/")[0], same = draft.filter(k => k.startsWith(kind + "/"));
+  const i = same.indexOf(key), j = i + +b.dataset.mv;
+  if (i < 0 || j < 0 || j >= same.length) return;
+  [same[i], same[j]] = [same[j], same[i]];
+  draft = [...draft.filter(k => !k.startsWith(kind + "/")), ...same];
+  draft = [...draft.filter(k => k.startsWith("leather/")), ...draft.filter(k => !k.startsWith("leather/"))];
+  moved.add(key); renderList();
+});
+async function saveOrder() {
+  const next = draft, changed = moved.size > 0;
+  draft = null; moved.clear();
+  if (!changed) return;
+  if (!token) { ordered = next; return say($("listStatus"), "試用模式：正式版會把這個順序存起來，客人看到的色卡也會照這個排。這次沒有儲存。", "wait"); }
+  ordered = next;
+  say($("listStatus"), "儲存順序中…", "wait");
+  try {
+    // Swatches that are 下架 keep their place in the old list, after the ones customers see.
+    await editJson("order.json", [], old => [...next, ...old.filter(k => !next.includes(k))], "Reorder swatches");
+    say($("listStatus"), "順序已儲存，網站更新中（約 1–2 分鐘）…", "wait");
+    sorting = true; watchSite();
+  } catch (err) { ordered = null; say($("listStatus"), fail(err), "bad"); }
+  renderList();
+}
+let sorting = false;  // a saved order the swatch site doesn't show yet
+$("sortList").addEventListener("click", () => setMode("sort"));
 $("hideList").addEventListener("click", () => setMode("hide"));
 $("editList").addEventListener("click", () => setMode("delete"));
 const fail = err => err.message === "Failed to fetch" ? "連不上 GitHub，請確認網路後再試一次。" : err.message;
@@ -391,7 +455,7 @@ function watchSite() {
   let tries = 0;
   watching = setInterval(async () => {
     await loadShop();
-    if (!pending.length && !removing.size && !hiding.size && !showing.size) clearInterval(watching);
+    if (!pending.length && !removing.size && !hiding.size && !showing.size && !sorting) clearInterval(watching);
     else if (++tries > 40) { clearInterval(watching); say($("status"), "上傳成功，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }
