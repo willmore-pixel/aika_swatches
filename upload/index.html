@@ -70,11 +70,16 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 /* While 編輯 / 排序 / 下架 / 刪除 is on, its 完成 is a yellow pill (the trial note's yellow), so it isn't forgotten. */
 .link-btn.on { background: #ffd27a; color: #2b2a1a; padding: 6px 12px; border-radius: 99px; box-shadow: 0 2px 0 #c99a3c; }
 /* 編輯: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
-.sw.editing { grid-column: 1 / -1; padding: 10px; border-radius: 14px; background: var(--panel); border: 2px solid var(--accent); }
-.sw.editing { gap: 8px; color: var(--fg); scroll-margin-top: 12px; }
+/* 編輯 opens its own full screen over the page. */
+.sheet { position: fixed; inset: 0; z-index: 18; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet-in { max-width: 560px; margin: 0 auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 12px; }
+.sheet-head { position: sticky; top: 0; z-index: 1; margin: 0 -16px; padding: 14px 16px; background: var(--bg); border-bottom: 2px solid var(--line); font-size: 19px; font-weight: 800; }
+body.sheet-open { overflow: hidden; }
+.sw.editing { padding: 0; font-size: 13px; text-align: center; }
+.sw.editing { gap: 8px; color: var(--fg); }
 .sw.editing-src i { border-color: var(--accent); }
 .sw.editing-src { color: var(--accent); }
-.sw.editing i { width: 140px; justify-self: center; }
+.sw.editing i { width: min(60vw, 220px); justify-self: center; }
 .sw.editing .seg button { padding: 8px; font-size: 14px; }
 .cm-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
 .cm-row b { min-width: 110px; font-size: 16px; font-weight: 900; }
@@ -184,6 +189,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
   </main>
 </div>
 
+<div class="sheet" id="editSheet" hidden><div class="sheet-in"><div class="sheet-head">編輯色卡</div><div id="editBody"></div><p class="status" id="editStatus"></p></div></div>
 <input id="renSnap" type="file" accept="image/*" capture="environment" hidden><input id="renAlbum" type="file" accept="image/*" hidden>
 <div class="cam" id="cam" hidden>
   <video id="camVideo" class="cam-only" playsinline muted autoplay></video>
@@ -390,7 +396,12 @@ function renderList() {
       return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map(s => cell(s.name, s.kind, picOf(s), false, false, s.cm, mode === "sort")).join("") : "";
     }).join("");
   const offHtml = [...OFF].reverse().map(s => cell(s.name, s.kind, picOf(s), false, true, s.cm)).join("");
-  $("list").innerHTML = editTop + listHtml;
+  $("list").innerHTML = listHtml;
+  // The swatch being edited is shown on its own screen (editSheet) over the list.
+  const opening = !!editTop && $("editSheet").hidden;
+  if (editTop) $("editBody").innerHTML = editTop;
+  $("editSheet").hidden = !editTop; document.body.classList.toggle("sheet-open", !!editTop);
+  if (opening) { $("editSheet").scrollTop = 0; say($("editStatus"), ""); }
   $("offList").innerHTML = offHtml;
   $("offWrap").hidden = !OFF.length;
   if (typing && $(typing[0])) { $(typing[0]).focus(); $(typing[0]).setSelectionRange(typing[1], typing[2]); }
@@ -554,6 +565,7 @@ async function setOff(key, off) {
   } catch (err) { say($("listStatus"), fail(err), "bad"); }
   renderList();
 }
+$("editSheet").addEventListener("click", editClick);
 document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("click", async e => {
   if (editClick(e)) return;
   const h = e.target.closest("[data-hide]"); if (h) return setOff(h.dataset.hide, true);
@@ -594,7 +606,6 @@ function startEdit(key) {
   const s = [...SHOP, ...OFF].find(x => keyOf(x) === key); if (!s) return;
   renKey = key; renDraft = { ...splitName(s.name), kind: s.kind, cm: s.cm || 30, raw: null, out: null, seam: false, v: s.v };
   renderList();
-  document.querySelector(".sw.editing")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 function editCell(s, url) {
   const d = renDraft, seg = (attr, val, now, text) => `<button type="button" ${attr}="${val}" aria-pressed="${now === val}">${text}</button>`;
@@ -644,17 +655,17 @@ function editShot(canvas) {
   if (!renDraft) return;
   renDraft.raw = canvas; renDraft.seam = false; renDraft.cm = camCm; editOut();
   renderList();
-  setTimeout(() => document.querySelector(".sw.editing")?.scrollIntoView({ block: "center" }), 50);
+
 }
 async function saveEdit() {
   const key = renKey, d = renDraft; if (!key || !d) return;
   const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = fullName(d.code, d.name), toKind = d.kind, toKey = `${toKind}/${to}`;
   const cur = [...SHOP, ...OFF].find(x => keyOf(x) === key);
-  if (!to) { $("renCode")?.focus(); return say($("listStatus"), "請輸入編號或名稱。", "bad"); }
+  if (!to) { $("renCode")?.focus(); return say($("editStatus"), "請輸入編號或名稱。", "bad"); }
   const what = [to !== from && `名稱改成「${to}」`, toKind !== kind && `種類改成${KIND_NAME[toKind]}`, d.cm !== (cur?.cm || 30) && `大小改成 ${d.cm} cm`, d.out && "換了照片"].filter(Boolean);
   if (!what.length) { renKey = renDraft = null; renderList(); return say($("listStatus"), "沒有改任何東西。", "wait"); }
   const lower = to.toLowerCase();
-  if ([...SHOP, ...OFF].some(x => x.name.toLowerCase() === lower && keyOf(x) !== key)) return say($("listStatus"), `已經有叫「${to}」的色卡，請換個名字。`, "bad");
+  if ([...SHOP, ...OFF].some(x => x.name.toLowerCase() === lower && keyOf(x) !== key)) return say($("editStatus"), `已經有叫「${to}」的色卡，請換個名字。`, "bad");
   if (!token) {
     renKey = renDraft = null;
     // The trial's made-up swatches change right away, so the result can be seen.
