@@ -14,7 +14,6 @@
  "leather/cw-135(深啡牛皮)": 30,
  "canvas/c-ff-1092": 30,
  "canvas/c-ff-1091": 30,
- "canvas/Calico-s15": 10,
  "leather/cw-121 (塗料牛皮)": 12,
  "leather/cw-129 (塗料牛皮)": 30,
  "leather/cw-152 (牛皮壓紋)": 30,
@@ -30,5 +29,6 @@
  "canvas/Calico-127 (印花)": 12,
  "canvas/Calico-66 (印花)": 30,
  "canvas/Calico-84 (印花)": 12,
- "canvas/Calico-s14 (編織)": 10
+ "canvas/Calico-s14 (編織)": 10,
+ "canvas/Calico-s15 (編織)": 10
 }
