@@ -383,6 +383,7 @@ async function loadShop() {
 // "v" (from build.py) changes when a swatch's photo is replaced, so the new picture shows instead of the browser's old copy.
 const picOf = s => s.url || SITE + s.file + (s.v ? "?v=" + s.v : "");
 function renderList() {
+  if (drag?.on) return;  // not while a tile is being dragged (it is moved by hand); dragEnd redraws
   const cell = (n, k, url, isNew, isOff, cm, sortable) => {
     const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key) || renaming.has(key);
     // The swatch being edited: its edit box sits at the top of the list; the tile stays in place, outlined.
@@ -430,7 +431,7 @@ function setMode(m) {
   $("editList").textContent = mode === "delete" ? "完成" : "刪除";
   ["renameList", "sortList", "hideList", "editList"].forEach(id => $(id).classList.toggle("on", $(id).textContent === "完成"));
   say($("listStatus"), mode === "rename" ? "按色卡上的「編輯」，可以換照片、改種類、大小、編號和名稱，再按「儲存」。客人存過的設計不會受影響。"
-    : mode === "sort" ? "按住色卡一下，再拖到想要的位置（皮革、布樣各自排）。排好了按上面黃色的「完成」儲存。"
+    : mode === "sort" ? "按住色卡不放，等它浮起來再拖到想要的位置（皮革、布樣各自排）。排好了按上面黃色的「完成」儲存。"
     : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
     : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
   if (wasSort && draft) saveOrder();  // leaving 排序 saves the new order (and says so)
@@ -460,7 +461,7 @@ function dragBegin() {
   drag.dx = drag.x - r.left; drag.dy = drag.y - r.top;
   document.body.append(g); drag.ghost = g; drag.on = true;
   navigator.vibrate?.(12);
-  renderList(); dragMove(drag.x, drag.y);
+  el.classList.add("lifted"); dragMove(drag.x, drag.y);
   const scroll = () => {
     if (!drag?.on) return;
     const edge = 90, y = drag.y, v = y < edge ? -(edge - y) / 6 : y > innerHeight - edge ? (y - innerHeight + edge) / 6 : 0;
@@ -484,7 +485,10 @@ function dragOver(x, y) {
   same.splice(i, 1); same.splice(j, 0, drag.key);
   draft = [...draft.filter(k => !k.startsWith(kind + "/")), ...same];
   draft = [...draft.filter(k => k.startsWith("leather/")), ...draft.filter(k => !k.startsWith("leather/"))];
-  moved.add(drag.key); renderList();
+  moved.add(drag.key);
+  // Move the tile itself instead of redrawing the list, so the finger's touch stays on a tile that is still on the page.
+  const el = document.querySelector(`.sw.sortable[data-key="${CSS.escape(drag.key)}"]`);
+  if (el) { over.parentNode.insertBefore(el, i < j ? over.nextSibling : over); el.classList.add("moved"); }
 }
 function dragEnd() {
   if (!drag) return;
@@ -493,21 +497,22 @@ function dragEnd() {
   if (was) renderList();
 }
 const list = $("list");
+// Phones: the listeners are not passive, so the browser waits for them and the page stops scrolling once a drag has
+// started (with passive ones, Android Chrome scrolls the page anyway).
 list.addEventListener("touchstart", e => {
   const t = sortTile(e.target); if (!t || e.touches.length > 1) return dragEnd();
   drag = { key: t.dataset.key, x: e.touches[0].clientX, y: e.touches[0].clientY, x0: e.touches[0].clientX, y0: e.touches[0].clientY };
-  drag.timer = setTimeout(dragBegin, 250);
-  // The touch keeps going to the element first pressed, even after the list is redrawn while dragging and that element
-  // is gone from the page, so the rest of the touch is followed on that element itself.
-  const el = e.target, move = ev => {
-    if (!drag) return;
-    const p = ev.touches[0];
-    if (!drag.on) { if (Math.hypot(p.clientX - drag.x0, p.clientY - drag.y0) > 10) stop(); return; }  // a swipe: let the page scroll
-    ev.preventDefault(); dragMove(p.clientX, p.clientY);
-  }, stop = () => { dragEnd(); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", stop); el.removeEventListener("touchcancel", stop); };
-  el.addEventListener("touchmove", move, { passive: false });
-  el.addEventListener("touchend", stop); el.addEventListener("touchcancel", stop);
-}, { passive: true });
+  drag.timer = setTimeout(dragBegin, 200);
+}, { passive: false });
+document.addEventListener("touchmove", e => {
+  if (!drag || drag.mouse) return;
+  const p = e.touches[0];
+  if (!drag.on) { if (Math.hypot(p.clientX - drag.x0, p.clientY - drag.y0) > 10) dragEnd(); return; }  // a swipe: let the page scroll
+  if (e.cancelable) e.preventDefault();
+  dragMove(p.clientX, p.clientY);
+}, { passive: false });
+document.addEventListener("touchend", () => { if (drag && !drag.mouse) dragEnd(); });
+document.addEventListener("touchcancel", () => { if (drag && !drag.mouse) dragEnd(); });
 list.addEventListener("contextmenu", e => { if (sortTile(e.target)) e.preventDefault(); });
 // Mouse: drag straight away.
 list.addEventListener("pointerdown", e => {
