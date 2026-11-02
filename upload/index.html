@@ -66,9 +66,10 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .mv button { flex: 1; height: 30px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 900; padding: 0; }
 .mv button:disabled { background: var(--tile); color: var(--line); }
 .sw.moved i { border-color: var(--accent); }
-/* 改名: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
+/* 編輯: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
 .sw.editing { grid-column: 1 / -1; padding: 10px; border-radius: 14px; background: var(--panel); border: 2px solid var(--accent); }
 .sw.editing i { width: 110px; justify-self: center; }
+.sw.editing .label { text-align: left; margin: 4px 0 -2px; }
 .sw .ren { padding: 8px 10px; font-size: 15px; border-radius: 10px; text-align: center; }
 .sw .ren-row { display: flex; gap: 6px; }
 .sw .ren-row button { flex: 1; height: 34px; border-radius: 10px; border: 2px solid var(--line); background: var(--tile); color: var(--fg); font-size: 14px; font-weight: 900; padding: 0; }
@@ -146,9 +147,14 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
         </div>
       </div>
       <div>
-        <span class="label">名稱（客人看到的名字）</span>
-        <input class="field" id="name" type="text" maxlength="40" placeholder="例如：焦糖 Caramel" enterkeyhint="done">
+        <span class="label">編號</span>
+        <input class="field" id="code" type="text" maxlength="20" placeholder="例如：cw-01" enterkeyhint="next" autocapitalize="off">
       </div>
+      <div>
+        <span class="label">名稱</span>
+        <input class="field" id="name" type="text" maxlength="40" placeholder="例如：黑色牛皮" enterkeyhint="done">
+      </div>
+      <p class="small" id="seeName">客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。</p>
       <div class="row">
         <button class="btn" id="retake" type="button">重拍</button>
         <button class="btn primary" id="publish" type="button">上架</button>
@@ -157,7 +163,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="renameList" type="button">改名</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="renameList" type="button">編輯</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -232,6 +238,16 @@ $("kinds").addEventListener("click", e => {
   kind = b.dataset.kind;
   $("kinds").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
 });
+// A swatch's file name (what customers see) is "編號 (名稱)", or just the one that was filled in.
+const fullName = (code, name) => { code = cleanName(code).replace(/[()]/g, ""); name = cleanName(name); return code && name ? `${code} (${name})` : code || name; };
+// Splits a file name back into 編號 and 名稱: "cw-27(麂皮+印花)" -> cw-27 / 麂皮+印花; a lone code like "Calico-110" is the 編號.
+function splitName(n) {
+  const m = n.match(/^([^()]+?)\s*\((.+)\)$/);
+  if (m) return { code: m[1].trim(), name: m[2].trim() };
+  return /^[\w.\-]+$/.test(n) ? { code: n, name: "" } : { code: "", name: n };
+}
+function seeName() { const n = fullName($("code").value, $("name").value); $("seeName").textContent = n ? `客人看到：「${n}」` : "客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。"; }
+["code", "name"].forEach(id => $(id).addEventListener("input", seeName));
 const cleanName = s => s.replace(/[\\/:*?"<>|#%\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
 
 // ---- The chosen square becomes a 1024 px JPEG (the size the swatch site keeps), shown on the shoe as camCm x camCm
@@ -255,9 +271,9 @@ function setShot(src, sx, sy, side) {
 $("retake").addEventListener("click", () => { haveShot = false; $("editCard").hidden = true; $("pickers").hidden = false; say($("status"), ""); });
 
 $("publish").addEventListener("click", async () => {
-  const name = cleanName($("name").value);
+  const name = fullName($("code").value, $("name").value);
   if (!haveShot) return;
-  if (!name) { $("name").focus(); return say($("status"), "請先輸入名稱。", "bad"); }
+  if (!name) { $("code").focus(); return say($("status"), "請先輸入編號或名稱。", "bad"); }
   const path = `${kind}/${name}.jpg`;
   if (!token) {
     return say($("status"), `試用模式：正式上架時，這張會放進「${KIND_NAME[kind]}」，名稱「${name}」，大小 ${shotCm} cm，約 1–2 分鐘後出現在網站。這次沒有上架。`, "wait");
@@ -276,7 +292,7 @@ $("publish").addEventListener("click", async () => {
     const key = `${kind}/${name}`;
     await editJson("order.json", [], old => [key, ...(old.length ? old : SHOP.map(keyOf)).filter(k => k !== key)], `Swatch ${name} (${kind}) goes first`);
     pending.push({ name, kind, cm: shotCm, url: $("out").toDataURL("image/jpeg", 0.6) });
-    haveShot = false; $("name").value = ""; $("editCard").hidden = true; $("pickers").hidden = false;
+    haveShot = false; $("name").value = ""; $("code").value = ""; seeName(); $("editCard").hidden = true; $("pickers").hidden = false;
     say($("status"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
     renderList(); watchSite();
   } catch (e) {
@@ -294,7 +310,18 @@ async function nameTaken(name) {
 // ---- What customers see now (the swatch site's list), plus anything just uploaded that is still being published,
 // and what is 下架 (off the shelf: kept in the repo, listed in hidden.json, not shown to customers). ----
 let SHOP = [], OFF = [], watching = null;
+// Away from the real site and with no key (the trial page), the list shows three made-up swatches to try 編輯 on.
+const DEMO = !token && location.hostname !== "willmore-pixel.github.io";
+const demoTile = (c1, c2) => { const c = document.createElement("canvas"); c.width = c.height = 96; const x = c.getContext("2d");
+  x.fillStyle = c1; x.fillRect(0, 0, 96, 96); x.fillStyle = c2; for (let i = 0; i < 96; i += 24) for (let j = (i / 24 % 2) * 12; j < 96; j += 24) { x.beginPath(); x.arc(j + 6, i + 12, 5, 0, 7); x.fill(); } return c.toDataURL(); };
 async function loadShop() {
+  if (DEMO) {
+    if (!SHOP.length) SHOP = [
+      { name: "cw-01 (黑色牛皮)", kind: "leather", url: demoTile("#232020", "#2c2827"), cm: 30 },
+      { name: "sh-25 (米色牛皮)", kind: "leather", url: demoTile("#d9c3a0", "#cfb690"), cm: 15 },
+      { name: "Calico-110", kind: "canvas", url: demoTile("#9cb6d0", "#f4e7c8"), cm: 10 }];
+    return renderList();
+  }
   try {
     const [r, h] = await Promise.all([fetch(SITE + "swatches.json", { cache: "no-store" }), fetch(SITE + "swatches-hidden.json", { cache: "no-store" })]);
     if (r.ok) SHOP = await r.json();
@@ -321,10 +348,11 @@ function renderList() {
   const cell = (n, k, url, isNew, isOff, cm, mv) => {
     const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key) || renaming.has(key);
     if (mode === "rename" && renKey === key && !busy) return `<div class="sw editing"><i style="background-image:url('${url}')"></i>` +
-      `<input class="field ren" id="renInput" type="text" maxlength="40" value="${esc(renDraft)}" enterkeyhint="done" aria-label="新的名稱">` +
+      `<span class="label">編號</span><input class="field ren" id="renCode" type="text" maxlength="20" value="${esc(renDraft.code)}" enterkeyhint="next" autocapitalize="off" aria-label="編號">` +
+      `<span class="label">名稱</span><input class="field ren" id="renInput" type="text" maxlength="40" value="${esc(renDraft.name)}" enterkeyhint="done" aria-label="名稱">` +
       `<div class="ren-row"><button type="button" data-ren-cancel>取消</button><button type="button" class="ok" data-ren-ok>儲存</button></div>${KIND_NAME[k]} · ${cm || 30} cm</div>`;
     const btn = isNew || busy ? ""
-      : mode === "rename" ? `<button class="act" type="button" data-ren="${esc(key)}">改名</button>`
+      : mode === "rename" ? `<button class="act" type="button" data-ren="${esc(key)}">編輯</button>`
       : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
       : isOff ? `<button class="act up" type="button" data-show="${esc(key)}">上架</button>`
       : mode === "hide" ? `<button class="act" type="button" data-hide="${esc(key)}">下架</button>` : "";
@@ -334,16 +362,16 @@ function renderList() {
   };
   // Customers see the swatches in this order, 皮革 first, then 布樣.
   const shop = shownOrder();
-  const typing = document.activeElement?.id === "renInput" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+  const act = document.activeElement, typing = act && /^ren(Input|Code)$/.test(act.id) ? [act.id, act.selectionStart, act.selectionEnd] : null;
   $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
     ["leather", "canvas"].map(k => {
       const list = shop.filter(s => s.kind === k);
-      return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map((s, i) => cell(s.name, s.kind, SITE + s.file, false, false, s.cm,
+      return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map((s, i) => cell(s.name, s.kind, s.url || SITE + s.file, false, false, s.cm,
         mode === "sort" && { first: i === 0, last: i === list.length - 1 })).join("") : "";
     }).join("");
-  $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, true, s.cm)).join("");
+  $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, s.url || SITE + s.file, false, true, s.cm)).join("");
   $("offWrap").hidden = !OFF.length;
-  if (typing && $("renInput")) { $("renInput").focus(); $("renInput").setSelectionRange(...typing); }
+  if (typing && $(typing[0])) { $(typing[0]).focus(); $(typing[0]).setSelectionRange(typing[1], typing[2]); }
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
 // ---- 下架 shows a 下架 button on each swatch (one tap, it can be put back); 刪除 shows an ×: tap it, then tap again to confirm (no pop-ups). ----
@@ -353,11 +381,11 @@ function setMode(m) {
   const wasSort = mode === "sort";
   mode = mode === m ? "" : m; armedKey = null; renKey = null;
   if (mode === "sort") { draft = shownOrder().map(keyOf); moved.clear(); }
-  $("renameList").textContent = mode === "rename" ? "完成" : "改名";
+  $("renameList").textContent = mode === "rename" ? "完成" : "編輯";
   $("sortList").textContent = mode === "sort" ? "完成" : "排序";
   $("hideList").textContent = mode === "hide" ? "完成" : "下架";
   $("editList").textContent = mode === "delete" ? "完成" : "刪除";
-  say($("listStatus"), mode === "rename" ? "按色卡上的「改名」，打新的名稱，再按「儲存」。客人存過的設計不會受影響。"
+  say($("listStatus"), mode === "rename" ? "按色卡上的「編輯」，改編號或名稱，再按「儲存」。客人存過的設計不會受影響。"
     : mode === "sort" ? "按色卡下面的 ◀ ▶ 往前、往後移。排好了按右上角「完成」儲存。"
     : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
     : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
@@ -439,7 +467,7 @@ async function setOff(key, off) {
   renderList();
 }
 document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("click", async e => {
-  const rn = e.target.closest("[data-ren]"); if (rn) { renKey = rn.dataset.ren; renDraft = renKey.split("/").slice(1).join("/"); renderList(); const f = $("renInput"); f.focus(); f.select(); return; }
+  const rn = e.target.closest("[data-ren]"); if (rn) { renKey = rn.dataset.ren; renDraft = splitName(renKey.split("/").slice(1).join("/")); renderList(); const f = $("renCode"); f.focus(); f.select(); return; }
   if (e.target.closest("[data-ren-cancel]")) { renKey = null; return renderList(); }
   if (e.target.closest("[data-ren-ok]")) return renameSwatch();
   const h = e.target.closest("[data-hide]"); if (h) return setOff(h.dataset.hide, true);
@@ -473,18 +501,23 @@ document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("
 // ---- 改名: the photo's file is renamed (its name is what customers see), and hidden.json / sizes.json / order.json follow,
 // all in one commit. renamed.json keeps the first file name, so the swatch site keeps the picture's address and designs
 // customers saved with it still work. ----
-let renKey = null, renDraft = "";
+let renKey = null, renDraft = { code: "", name: "" };
 const renaming = new Map();  // "kind/old name" -> "kind/new name", until the swatch site shows the new name
-document.addEventListener("input", e => { if (e.target.id === "renInput") renDraft = e.target.value; });
-document.addEventListener("keydown", e => { if (e.target.id === "renInput" && e.key === "Enter") { e.preventDefault(); renameSwatch(); } });
+document.addEventListener("input", e => { if (e.target.id === "renInput") renDraft.name = e.target.value; if (e.target.id === "renCode") renDraft.code = e.target.value; });
+document.addEventListener("keydown", e => { if (e.key !== "Enter") return;
+  if (e.target.id === "renCode") { e.preventDefault(); $("renInput").focus(); }
+  if (e.target.id === "renInput") { e.preventDefault(); renameSwatch(); } });
 async function renameSwatch() {
   const key = renKey; if (!key) return;
-  const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = cleanName(renDraft);
-  if (!to) { $("renInput")?.focus(); return say($("listStatus"), "請輸入新的名稱。", "bad"); }
+  const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = fullName(renDraft.code, renDraft.name);
+  if (!to) { $("renCode")?.focus(); return say($("listStatus"), "請輸入編號或名稱。", "bad"); }
   if (to === from) { renKey = null; renderList(); return say($("listStatus"), "名稱沒有改。", "wait"); }
   if (!token) {
-    renKey = null; renderList();
-    return say($("listStatus"), `試用模式：正式版會把「${from}」改名為「${to}」，約 1–2 分鐘後網站就會換成新名字。這次沒有改。`, "wait");
+    renKey = null;
+    // The trial's made-up swatches take the new name right away, so the result can be seen.
+    if (DEMO) { const s = [...SHOP, ...OFF].find(x => keyOf(x) === key); if (s) s.name = to; }
+    renderList();
+    return say($("listStatus"), `試用模式：正式版會把「${from}」改成「${to}」，約 1–2 分鐘後網站就會換成新名字。真的色卡這次沒有改。`, "wait");
   }
   const toKey = `${kind}/${to}`;
   renKey = null; renaming.set(key, toKey); renderList();

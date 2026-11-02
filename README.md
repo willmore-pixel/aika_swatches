@@ -6,7 +6,7 @@
 - **檔名就是客人看到的名稱**，例如 `焦糖 Caramel.jpg`。上傳前可以先改好檔名。
 - **刪除色卡**：點開照片，按右上角「⋯ → Delete file」。
 - **下架 / 上架 / 刪除**：在色卡上架頁 https://willmore-pixel.github.io/aika_swatches/upload/ 最方便。下架的色卡照片還在，只是列在 `hidden.json`，客人看不到；按「上架」就回來。
-- **改名**：在上架頁按「改名」。檔名跟著改，`hidden.json`、`sizes.json`、`order.json` 也一起改；`renamed.json` 記住原本的檔名，讓客人存過的設計還找得到這張色卡。
+- **編輯（改編號、名稱）**：在上架頁按「編輯」。檔名跟著改，`hidden.json`、`sizes.json`、`order.json` 也一起改；`renamed.json` 記住原本的檔名，讓客人存過的設計還找得到這張色卡。
 - 上傳或刪除後約 1–2 分鐘，網站 https://willmore-pixel.github.io/aika_shoes_studio/ 會自動更新。照片會自動裁成正方形。
 
 ## 鞋款 Styles
