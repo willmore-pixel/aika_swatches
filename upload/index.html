@@ -71,7 +71,9 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .link-btn.on { background: #ffd27a; color: #2b2a1a; padding: 6px 12px; border-radius: 99px; box-shadow: 0 2px 0 #c99a3c; }
 /* 編輯: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
 .sw.editing { grid-column: 1 / -1; padding: 10px; border-radius: 14px; background: var(--panel); border: 2px solid var(--accent); }
-.sw.editing { gap: 8px; color: var(--fg); }
+.sw.editing { gap: 8px; color: var(--fg); scroll-margin-top: 12px; }
+.sw.editing-src i { border-color: var(--accent); }
+.sw.editing-src { color: var(--accent); }
 .sw.editing i { width: 140px; justify-self: center; }
 .sw.editing .seg button { padding: 8px; font-size: 14px; }
 .cm-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
@@ -367,7 +369,8 @@ const picOf = s => s.url || SITE + s.file + (s.v ? "?v=" + s.v : "");
 function renderList() {
   const cell = (n, k, url, isNew, isOff, cm, sortable) => {
     const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key) || renaming.has(key);
-    if (mode === "rename" && renKey === key && renDraft && !busy) return editCell(key, url);
+    // The swatch being edited: its edit box sits at the top of the list; the tile stays in place, outlined.
+    if (mode === "rename" && renKey === key && renDraft && !busy) { editTop = editCell(key, url); return `<div class="sw editing-src"><i style="background-image:url('${url}')"></i>${esc(n)}<br>編輯中</div>`; }
     const btn = isNew || busy ? ""
       : mode === "rename" ? `<button class="act" type="button" data-ren="${esc(key)}">編輯</button>`
       : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
@@ -380,12 +383,15 @@ function renderList() {
   // Customers see the swatches in this order, 皮革 first, then 布樣.
   const shop = shownOrder();
   const act = document.activeElement, typing = act && /^ren(Input|Code)$/.test(act.id) ? [act.id, act.selectionStart, act.selectionEnd] : null;
-  $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
+  let editTop = "";
+  const listHtml = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
     ["leather", "canvas"].map(k => {
       const list = shop.filter(s => s.kind === k);
       return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map(s => cell(s.name, s.kind, picOf(s), false, false, s.cm, mode === "sort")).join("") : "";
     }).join("");
-  $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, picOf(s), false, true, s.cm)).join("");
+  const offHtml = [...OFF].reverse().map(s => cell(s.name, s.kind, picOf(s), false, true, s.cm)).join("");
+  $("list").innerHTML = editTop + listHtml;
+  $("offList").innerHTML = offHtml;
   $("offWrap").hidden = !OFF.length;
   if (typing && $(typing[0])) { $(typing[0]).focus(); $(typing[0]).setSelectionRange(typing[1], typing[2]); }
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
@@ -588,7 +594,7 @@ function startEdit(key) {
   const s = [...SHOP, ...OFF].find(x => keyOf(x) === key); if (!s) return;
   renKey = key; renDraft = { ...splitName(s.name), kind: s.kind, cm: s.cm || 30, raw: null, out: null, seam: false, v: s.v };
   renderList();
-  document.querySelector(".sw.editing")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  document.querySelector(".sw.editing")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 function editCell(s, url) {
   const d = renDraft, seg = (attr, val, now, text) => `<button type="button" ${attr}="${val}" aria-pressed="${now === val}">${text}</button>`;
