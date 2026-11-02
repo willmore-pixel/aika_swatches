@@ -93,6 +93,17 @@ body.sheet-open { overflow: hidden; }
 .hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
+/* A field that still needs filling turns red, with its message right under it; a name other swatches already use gets a yellow line. */
+.field.bad { border-color: var(--bad); }
+.err { margin: 6px 0 0; font-size: 14px; font-weight: 800; line-height: 1.45; color: var(--bad); }
+.err.warn { color: #ffd27a; }
+.err:empty { display: none; }
+/* 編輯 / 排序 / 下架 / 刪除: four big buttons, each with a picture; the one that is on turns yellow and reads 完成. */
+.tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tool { display: grid; justify-items: center; gap: 4px; padding: 10px 2px 8px; border-radius: 14px; border: 2px solid var(--line); background: var(--tile); color: var(--accent); font-weight: 900; font-size: 14px; }
+.tool svg { width: 26px; height: 26px; }
+.tool.on { background: #ffd27a; border-color: #ffd27a; color: #2b2a1a; box-shadow: 0 3px 0 #c99a3c; }
+.btn svg, .link-btn svg { width: 18px; height: 18px; vertical-align: -3px; margin-right: 4px; }
 
 /* Camera and crop view: copied from the studio (square guide of 5–30 cm with a cm ruler; only the square is kept). */
 .cam { position: fixed; inset: 0; z-index: 20; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -121,11 +132,11 @@ body.sheet-open { overflow: hidden; }
 <div class="app">
   <header>
     <h1>快速色卡上架 <span>店家專用</span></h1>
-    <button class="link-btn" id="openKey" type="button">設定</button>
+    <button class="link-btn" id="openKey" type="button">⚙️ 設定</button>
   </header>
 
   <main>
-    <p class="note" id="trialNote" hidden>試用模式：可以拍照、裁切、命名，但不會真的上架。要正式上架，請先按右上角「設定」輸入上架金鑰。</p>
+    <p class="note" id="trialNote" hidden>試用模式：不會真的上架。<br>要正式上架：按右上角 ⚙️ 設定，輸入金鑰。</p>
 
     <div class="card" id="keyCard" hidden>
       <div>
@@ -169,18 +180,26 @@ body.sheet-open { overflow: hidden; }
       <div>
         <span class="label">名稱</span>
         <input class="field" id="name" type="text" maxlength="40" placeholder="例如：黑色牛皮" enterkeyhint="done">
+        <p class="err" id="nameErr"></p>
+        <p class="err warn" id="nameDup"></p>
       </div>
-      <p class="small" id="seeName">客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。</p>
+      <p class="small" id="seeName"></p>
       <div class="row">
-        <button class="btn" id="retake" type="button">重拍</button>
-        <button class="btn primary" id="publish" type="button">上架</button>
+        <button class="btn" id="retake" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></svg>重拍</button>
+        <button class="btn primary" id="publish" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span>上架</span></button>
       </div>
     </div>
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡 <span class="trial-tag" id="trialTag" hidden>試用模式</span></h2><div class="heads"><button class="link-btn" id="renameList" type="button">編輯</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
-    <p class="small" id="trialList" hidden>試用模式：下面是假的色卡，可以試編輯、排序、下架、刪除，不會改到真的色卡。輸入上架金鑰後就會顯示店裡的色卡。</p>
+    <div class="list-head"><h2>目前的色卡 <span class="trial-tag" id="trialTag" hidden>試用模式</span></h2></div>
+    <div class="tools">
+      <button class="tool" id="renameList" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span>編輯</span></button>
+      <button class="tool" id="sortList" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16M4 8l4-4 4 4"/><path d="M16 20V4M12 16l4 4 4-4"/></svg><span>排序</span></button>
+      <button class="tool" id="hideList" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg><span>下架</span></button>
+      <button class="tool" id="editList" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg><span>刪除</span></button>
+    </div>
+    <p class="small" id="trialList" hidden>試用模式：下面是假的色卡，隨便試，不會改到真的。</p>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -224,7 +243,7 @@ let kind = "leather", haveShot = false, shotCm = 30;
 const pending = [];  // swatches published from this page that the swatch site hasn't listed yet
 
 function say(el, text, cls) { el.textContent = text; el.className = "status" + (cls ? " " + cls : ""); }
-function showTrial() { $("trialNote").hidden = !!token; $("publish").textContent = token ? "上架" : "上架（試用）"; }
+function showTrial() { $("trialNote").hidden = !!token; $("publish").lastChild.textContent = token ? "上架" : "上架（試用）"; }
 
 // ---- Upload key: entered once per phone, kept only in this browser. ----
 $("openKey").addEventListener("click", () => { $("keyCard").hidden = !$("keyCard").hidden; $("keyInput").value = token; say($("keyStatus"), ""); });
@@ -265,8 +284,21 @@ function splitName(n) {
   if (m) return { code: m[1].trim(), name: m[2].trim() };
   return /^[\w.\-]+$/.test(n) ? { code: n, name: "" } : { code: "", name: n };
 }
-function seeName() { const n = fullName($("code").value, $("name").value); $("seeName").textContent = n ? `客人看到：「${n}」` : "客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。"; }
-["code", "name"].forEach(id => $(id).addEventListener("input", seeName));
+// Customers see only the 名稱 on the site (the 編號 when there is no 名稱); the picture they save shows both.
+const shownName = (code, name) => cleanName(name) || cleanName(code).replace(/[()]/g, "");
+function seeName() {
+  const n = shownName($("code").value, $("name").value);
+  $("seeName").textContent = n ? `客人看到：「${n}」。編號會印在客人存的圖上。` : "客人看到的是名稱，例如「黑色牛皮」。編號會印在客人存的圖上。";
+  $("nameDup").textContent = dupNote(n);
+}
+// Another swatch customers would see with the same name: say so (yellow, it can still be uploaded).
+function dupNote(n, skipKey) {
+  if (!n) return "";
+  const same = [...SHOP, ...OFF].filter(s => keyOf(s) !== skipKey && (({ code, name }) => name || code)(splitName(s.name)).toLowerCase() === n.toLowerCase()).length;
+  return same ? `已經有 ${same} 張也叫「${n}」，客人會分不出來。可以加顏色或花紋，例如「${n} 藍綠」。` : "";
+}
+function clearNameErr() { ["code", "name"].forEach(id => $(id).classList.remove("bad")); $("nameErr").textContent = ""; }
+["code", "name"].forEach(id => $(id).addEventListener("input", () => { clearNameErr(); seeName(); }));
 const cleanName = s => s.replace(/[\\/:*?"<>|#%\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
 
 // ---- The chosen square becomes a 1024 px JPEG (the size the swatch site keeps), shown on the shoe as camCm x camCm
@@ -286,15 +318,15 @@ function setShot(src, sx, sy, side) {
   haveShot = true; shotCm = camCm;
   $("shotSize").textContent = `這張代表 ${shotCm} × ${shotCm} cm，鞋子上會照這個大小重複鋪。`;
   $("editCard").hidden = false; $("pickers").hidden = true;
-  say($("status"), "");
+  say($("status"), ""); seeName();
   $("editCard").scrollIntoView({ block: "start" });
 }
-$("retake").addEventListener("click", () => { haveShot = false; $("editCard").hidden = true; $("pickers").hidden = false; say($("status"), ""); });
+$("retake").addEventListener("click", () => { clearNameErr(); haveShot = false; $("editCard").hidden = true; $("pickers").hidden = false; say($("status"), ""); });
 
 $("publish").addEventListener("click", async () => {
   const name = fullName($("code").value, $("name").value);
   if (!haveShot) return;
-  if (!name) { $("code").focus(); return say($("status"), "請先輸入編號或名稱。", "bad"); }
+  if (!name) { ["code", "name"].forEach(id => $(id).classList.add("bad")); $("nameErr").textContent = "請填名稱（或編號）。"; $("name").focus(); return say($("status"), ""); }
   const path = `${kind}/${name}.jpg`;
   if (!token) {
     return say($("status"), `試用模式：正式上架時，這張會放進「${KIND_NAME[kind]}」，名稱「${name}」，大小 ${shotCm} cm，約 1–2 分鐘後出現在網站。這次沒有上架。`, "wait");
@@ -303,7 +335,7 @@ $("publish").addEventListener("click", async () => {
   try {
     say($("status"), "上傳中…", "wait");
     // Same name in either folder would confuse customers, so refuse instead of overwriting.
-    if (await nameTaken(name)) throw new Error(`已經有叫「${name}」的色卡，請換個名字。`);
+    if (await nameTaken(name)) { ["code", "name"].forEach(id => $(id).classList.add("bad")); $("nameErr").textContent = `已經有叫「${name}」的色卡，請換個名字。`; $("name").focus(); return say($("status"), ""); }
     const blob = await new Promise(res => $("out").toBlob(res, "image/jpeg", 0.9));
     const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(",")[1]); fr.readAsDataURL(blob); });
     const r = await gh(`/contents/${encodeURIComponent(kind)}/${encodeURIComponent(name + ".jpg")}`, { method: "PUT", body: { message: `Add swatch ${name} (${kind})`, content: b64 } });
@@ -313,7 +345,7 @@ $("publish").addEventListener("click", async () => {
     const key = `${kind}/${name}`;
     await editJson("order.json", [], old => [key, ...(old.length ? old : SHOP.map(keyOf)).filter(k => k !== key)], `Swatch ${name} (${kind}) goes first`);
     pending.push({ name, kind, cm: shotCm, url: $("out").toDataURL("image/jpeg", 0.6) });
-    haveShot = false; $("name").value = ""; $("code").value = ""; seeName(); $("editCard").hidden = true; $("pickers").hidden = false;
+    haveShot = false; $("name").value = ""; $("code").value = ""; clearNameErr(); seeName(); $("editCard").hidden = true; $("pickers").hidden = false;
     say($("status"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
     renderList(); watchSite();
   } catch (e) {
@@ -425,15 +457,17 @@ function setMode(m) {
   const wasSort = mode === "sort";
   mode = mode === m ? "" : m; armedKey = null; renKey = renDraft = null; dragEnd();
   if (mode === "sort") { draft = shownOrder().map(keyOf); moved.clear(); }
-  $("renameList").textContent = mode === "rename" ? "完成" : "編輯";
-  $("sortList").textContent = mode === "sort" ? "完成" : "排序";
-  $("hideList").textContent = mode === "hide" ? "完成" : "下架";
-  $("editList").textContent = mode === "delete" ? "完成" : "刪除";
-  ["renameList", "sortList", "hideList", "editList"].forEach(id => $(id).classList.toggle("on", $(id).textContent === "完成"));
-  say($("listStatus"), mode === "rename" ? "按色卡上的「編輯」，可以換照片、改種類、大小、編號和名稱，再按「儲存」。客人存過的設計不會受影響。"
-    : mode === "sort" ? "按住色卡不放，等它浮起來再拖到想要的位置（皮革、布樣各自排）。排好了按上面黃色的「完成」儲存。"
-    : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
-    : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
+  // The tool that is on shows a ✓ and 完成 (yellow), the others keep their picture and word.
+  [["renameList", "rename", "編輯"], ["sortList", "sort", "排序"], ["hideList", "hide", "下架"], ["editList", "delete", "刪除"]].forEach(([id, m, word]) => {
+    const b = $(id), on = mode === m;
+    if (!b.dataset.icon) b.dataset.icon = b.querySelector("svg").outerHTML;
+    b.classList.toggle("on", on);
+    b.innerHTML = (on ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>' : b.dataset.icon) + `<span>${on ? "完成" : word}</span>`;
+  });
+  say($("listStatus"), mode === "rename" ? "點色卡上的「編輯」：換照片、名稱、大小。"
+    : mode === "sort" ? "按住色卡，拖到新位置。好了按黃色的 ✓ 完成。"
+    : mode === "hide" ? "點「下架」：客人看不到，照片留著。"
+    : mode === "delete" ? "點 ×，再點一次＝永久刪除。" : "", "wait");
   if (wasSort && draft) saveOrder();  // leaving 排序 saves the new order (and says so)
   renderList();
 }
@@ -630,8 +664,9 @@ function editCell(s, url) {
     (d.raw ? `<span class="label">照片處理</span><div class="seg">${seg("data-ren-seam", "0", d.seam ? "1" : "0", "原圖")}${seg("data-ren-seam", "1", d.seam ? "1" : "0", "無縫處理 2+")}</div>` : "") +
     `<span class="label">種類</span><div class="seg">${seg("data-ren-kind", "leather", d.kind, "皮革")}${seg("data-ren-kind", "canvas", d.kind, "布樣")}</div>` +
     `<span class="label">大小（這張照片代表幾公分）</span><div class="cm-row"><button type="button" data-ren-cm="-1" aria-label="小一點">−</button><b>${d.cm} × ${d.cm} cm</b><button type="button" data-ren-cm="1" aria-label="大一點">+</button></div>` +
-    `<span class="label">編號</span><input class="field ren" id="renCode" type="text" maxlength="20" value="${esc(d.code)}" enterkeyhint="next" autocapitalize="off" aria-label="編號">` +
-    `<span class="label">名稱</span><input class="field ren" id="renInput" type="text" maxlength="40" value="${esc(d.name)}" enterkeyhint="done" aria-label="名稱">` +
+    `<span class="label">編號</span><input class="field ren${d.bad ? " bad" : ""}" id="renCode" type="text" maxlength="20" value="${esc(d.code)}" enterkeyhint="next" autocapitalize="off" aria-label="編號">` +
+    `<span class="label">名稱</span><input class="field ren${d.bad ? " bad" : ""}" id="renInput" type="text" maxlength="40" value="${esc(d.name)}" enterkeyhint="done" aria-label="名稱">` +
+    `<p class="err" id="renErr">${esc(d.bad || "")}</p><p class="err warn" id="renDup">${esc(dupNote(shownName(d.code, d.name), s))}</p>` +
     `<div class="ren-row"><button type="button" data-ren-cancel>取消</button><button type="button" class="ok" data-ren-ok>儲存</button></div></div>`;
 }
 function editOut() {
@@ -640,7 +675,12 @@ function editOut() {
   c.getContext("2d").drawImage(d.seam ? makeSeamless(d.raw, 1024) : d.raw, 0, 0);
   d.out = c;
 }
-document.addEventListener("input", e => { if (!renDraft) return; if (e.target.id === "renInput") renDraft.name = e.target.value; if (e.target.id === "renCode") renDraft.code = e.target.value; });
+document.addEventListener("input", e => {
+  if (!renDraft || !/^ren(Input|Code)$/.test(e.target.id)) return;
+  if (e.target.id === "renInput") renDraft.name = e.target.value; else renDraft.code = e.target.value;
+  renDraft.bad = ""; $("renInput").classList.remove("bad"); $("renCode").classList.remove("bad"); $("renErr").textContent = "";
+  $("renDup").textContent = dupNote(shownName(renDraft.code, renDraft.name), renKey);
+});
 document.addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
   if (e.target.id === "renCode") { e.preventDefault(); $("renInput").focus(); }
@@ -676,11 +716,11 @@ async function saveEdit() {
   const key = renKey, d = renDraft; if (!key || !d) return;
   const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = fullName(d.code, d.name), toKind = d.kind, toKey = `${toKind}/${to}`;
   const cur = [...SHOP, ...OFF].find(x => keyOf(x) === key);
-  if (!to) { $("renCode")?.focus(); return say($("editStatus"), "請輸入編號或名稱。", "bad"); }
+  if (!to) { d.bad = "請填名稱（或編號）。"; renderList(); $("renInput")?.focus(); return say($("editStatus"), ""); }
   const what = [to !== from && `名稱改成「${to}」`, toKind !== kind && `種類改成${KIND_NAME[toKind]}`, d.cm !== (cur?.cm || 30) && `大小改成 ${d.cm} cm`, d.out && "換了照片"].filter(Boolean);
   if (!what.length) { renKey = renDraft = null; renderList(); return say($("listStatus"), "沒有改任何東西。", "wait"); }
   const lower = to.toLowerCase();
-  if ([...SHOP, ...OFF].some(x => x.name.toLowerCase() === lower && keyOf(x) !== key)) return say($("editStatus"), `已經有叫「${to}」的色卡，請換個名字。`, "bad");
+  if ([...SHOP, ...OFF].some(x => x.name.toLowerCase() === lower && keyOf(x) !== key)) { d.bad = `已經有叫「${to}」的色卡，請換個名字。`; renderList(); $("renInput")?.focus(); return say($("editStatus"), ""); }
   if (!token) {
     renKey = renDraft = null;
     // The trial's made-up swatches change right away, so the result can be seen.
