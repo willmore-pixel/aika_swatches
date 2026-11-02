@@ -89,6 +89,7 @@ body.sheet-open { overflow: hidden; }
 .sw .ren-row { display: flex; gap: 6px; }
 .sw .ren-row button { flex: 1; height: 34px; border-radius: 10px; border: 2px solid var(--line); background: var(--tile); color: var(--fg); font-size: 14px; font-weight: 900; padding: 0; }
 .sw .ren-row button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.trial-tag { display: inline-block; margin-left: 6px; padding: 2px 9px; border-radius: 99px; background: #2b2a1a; color: #ffd27a; font-size: 13px; letter-spacing: 0; vertical-align: 1px; }
 .hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
@@ -178,7 +179,8 @@ body.sheet-open { overflow: hidden; }
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="renameList" type="button">編輯</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <div class="list-head"><h2>目前的色卡 <span class="trial-tag" id="trialTag" hidden>試用模式</span></h2><div class="heads"><button class="link-btn" id="renameList" type="button">編輯</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <p class="small" id="trialList" hidden>試用模式：下面是假的色卡，可以試編輯、排序、下架、刪除，不會改到真的色卡。輸入上架金鑰後就會顯示店裡的色卡。</p>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -226,7 +228,7 @@ function showTrial() { $("trialNote").hidden = !!token; $("publish").textContent
 
 // ---- Upload key: entered once per phone, kept only in this browser. ----
 $("openKey").addEventListener("click", () => { $("keyCard").hidden = !$("keyCard").hidden; $("keyInput").value = token; say($("keyStatus"), ""); });
-$("keyClear").addEventListener("click", () => { token = ""; store.set("aika-upload-token", ""); $("keyInput").value = ""; showTrial(); say($("keyStatus"), "已清除，現在是試用模式。", "wait"); });
+$("keyClear").addEventListener("click", () => { token = ""; store.set("aika-upload-token", ""); $("keyInput").value = ""; showTrial(); switchList(); say($("keyStatus"), "已清除，現在是試用模式。", "wait"); });
 $("keySave").addEventListener("click", async () => {
   const t = $("keyInput").value.trim();
   if (!t) return say($("keyStatus"), "請貼上金鑰。", "bad");
@@ -236,7 +238,7 @@ $("keySave").addEventListener("click", async () => {
     if (!r.ok) throw new Error(r.status === 401 ? "金鑰不正確或已過期。" : "這把金鑰打不開色卡資料庫。");
     const repo = await r.json();
     if (!repo.permissions?.push) throw new Error("這把金鑰沒有寫入權限（Contents 要選 Read and write）。");
-    token = t; store.set("aika-upload-token", t); showTrial();
+    token = t; store.set("aika-upload-token", t); showTrial(); switchList();
     say($("keyStatus"), "已儲存，可以正式上架了 ✓", "ok");
     setTimeout(() => { $("keyCard").hidden = true; }, 1200);
   } catch (e) { say($("keyStatus"), e.message === "Failed to fetch" ? "連不上 GitHub，請確認網路。" : e.message, "bad"); }
@@ -329,11 +331,19 @@ async function nameTaken(name) {
 // ---- What customers see now (the swatch site's list), plus anything just uploaded that is still being published,
 // and what is 下架 (off the shelf: kept in the repo, listed in hidden.json, not shown to customers). ----
 let SHOP = [], OFF = [], watching = null;
-// Away from the real site and with no key (the trial page), the list shows ten made-up swatches to try 編輯 and 排序 on.
-const DEMO = !token && location.hostname !== "willmore-pixel.github.io";
+// With no key (試用模式) the list shows ten made-up swatches to try 編輯 and 排序 on, never the shop's real ones.
+let DEMO = !token;
+// Saving or clearing the key switches between the shop's swatches and the made-up ones.
+function switchList() {
+  DEMO = !token; SHOP = []; OFF = []; ordered = null; sorting = false; pending.length = 0;
+  [removing, hiding, showing, renaming].forEach(x => x.clear());
+  if (mode) setMode(mode);
+  say($("listStatus"), ""); loadShop();
+}
 const demoTile = (c1, c2) => { const c = document.createElement("canvas"); c.width = c.height = 96; const x = c.getContext("2d");
   x.fillStyle = c1; x.fillRect(0, 0, 96, 96); x.fillStyle = c2; for (let i = 0; i < 96; i += 24) for (let j = (i / 24 % 2) * 12; j < 96; j += 24) { x.beginPath(); x.arc(j + 6, i + 12, 5, 0, 7); x.fill(); } return c.toDataURL(); };
 async function loadShop() {
+  $("trialTag").hidden = $("trialList").hidden = !DEMO;
   if (DEMO) {
     if (!SHOP.length) SHOP = [
       ["cw-01 (黑色牛皮)", "leather", "#232020", "#2c2827", 30], ["sh-25 (米色牛皮)", "leather", "#d9c3a0", "#cfb690", 15],
