@@ -60,12 +60,35 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .sw .act { position: absolute; top: -6px; right: -6px; height: 24px; padding: 0 9px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-size: 12px; line-height: 24px; font-weight: 900; }
 .sw .act.up { background: var(--ok); color: #fff; }
 .off i { filter: grayscale(.7); opacity: .7; }
-/* 排序: ◀ ▶ under each swatch move it one place within its kind. */
+/* 排序: press and hold a swatch, then drag it. */
 .grp { grid-column: 1 / -1; margin: 6px 0 -2px; font-size: 13px; font-weight: 900; color: var(--muted); }
-.mv { display: flex; justify-content: space-between; gap: 6px; }
-.mv button { flex: 1; height: 30px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 900; padding: 0; }
-.mv button:disabled { background: var(--tile); color: var(--line); }
 .sw.moved i { border-color: var(--accent); }
+.sw.sortable { touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.sw.lifted { opacity: .25; }
+.drag-ghost { position: fixed; z-index: 30; pointer-events: none; color: var(--fg); transform-origin: 0 0; }
+.drag-ghost i { box-shadow: 0 10px 24px rgba(0,0,0,.55); border-color: var(--accent); }
+/* While 編輯 / 排序 / 下架 / 刪除 is on, its 完成 is a yellow pill (the trial note's yellow), so it isn't forgotten. */
+.link-btn.on { background: #ffd27a; color: #2b2a1a; padding: 6px 12px; border-radius: 99px; box-shadow: 0 2px 0 #c99a3c; }
+/* 編輯: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
+/* 編輯 opens its own full screen over the page. */
+.sheet { position: fixed; inset: 0; z-index: 18; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet-in { max-width: 560px; margin: 0 auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 12px; }
+.sheet-head { position: sticky; top: 0; z-index: 1; margin: 0 -16px; padding: 14px 16px; background: var(--bg); border-bottom: 2px solid var(--line); font-size: 19px; font-weight: 800; }
+body.sheet-open { overflow: hidden; }
+.sw.editing { padding: 0; font-size: 13px; text-align: center; }
+.sw.editing { gap: 8px; color: var(--fg); }
+.sw.editing-src i { border-color: var(--accent); }
+.sw.editing-src { color: var(--accent); }
+.sw.editing i { width: min(60vw, 220px); justify-self: center; }
+.sw.editing .seg button { padding: 8px; font-size: 14px; }
+.cm-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.cm-row b { min-width: 110px; font-size: 16px; font-weight: 900; }
+.cm-row button { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--line); background: var(--tile); color: var(--fg); font-size: 20px; font-weight: 900; padding: 0; }
+.sw.editing .label { text-align: left; margin: 4px 0 -2px; }
+.sw .ren { padding: 8px 10px; font-size: 15px; border-radius: 10px; text-align: center; }
+.sw .ren-row { display: flex; gap: 6px; }
+.sw .ren-row button { flex: 1; height: 34px; border-radius: 10px; border: 2px solid var(--line); background: var(--tile); color: var(--fg); font-size: 14px; font-weight: 900; padding: 0; }
+.sw .ren-row button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
@@ -139,9 +162,14 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
         </div>
       </div>
       <div>
-        <span class="label">名稱（客人看到的名字）</span>
-        <input class="field" id="name" type="text" maxlength="40" placeholder="例如：焦糖 Caramel" enterkeyhint="done">
+        <span class="label">編號</span>
+        <input class="field" id="code" type="text" maxlength="20" placeholder="例如：cw-01" enterkeyhint="next" autocapitalize="off">
       </div>
+      <div>
+        <span class="label">名稱</span>
+        <input class="field" id="name" type="text" maxlength="40" placeholder="例如：黑色牛皮" enterkeyhint="done">
+      </div>
+      <p class="small" id="seeName">客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。</p>
       <div class="row">
         <button class="btn" id="retake" type="button">重拍</button>
         <button class="btn primary" id="publish" type="button">上架</button>
@@ -150,7 +178,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="renameList" type="button">編輯</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -161,6 +189,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
   </main>
 </div>
 
+<div class="sheet" id="editSheet" hidden><div class="sheet-in"><div class="sheet-head">編輯色卡</div><div id="editBody"></div><p class="status" id="editStatus"></p></div></div>
+<input id="renSnap" type="file" accept="image/*" capture="environment" hidden><input id="renAlbum" type="file" accept="image/*" hidden>
 <div class="cam" id="cam" hidden>
   <video id="camVideo" class="cam-only" playsinline muted autoplay></video>
   <button type="button" class="cam-wake cam-only" id="camWake" hidden>開啟相機</button>
@@ -225,6 +255,16 @@ $("kinds").addEventListener("click", e => {
   kind = b.dataset.kind;
   $("kinds").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
 });
+// A swatch's file name (what customers see) is "編號 (名稱)", or just the one that was filled in.
+const fullName = (code, name) => { code = cleanName(code).replace(/[()]/g, ""); name = cleanName(name); return code && name ? `${code} (${name})` : code || name; };
+// Splits a file name back into 編號 and 名稱: "cw-27(麂皮+印花)" -> cw-27 / 麂皮+印花; a lone code like "Calico-110" is the 編號.
+function splitName(n) {
+  const m = n.match(/^([^()]+?)\s*\((.+)\)$/);
+  if (m) return { code: m[1].trim(), name: m[2].trim() };
+  return /^[\w.\-]+$/.test(n) ? { code: n, name: "" } : { code: "", name: n };
+}
+function seeName() { const n = fullName($("code").value, $("name").value); $("seeName").textContent = n ? `客人看到：「${n}」` : "客人看到的是「編號 (名稱)」，例如「cw-01 (黑色牛皮)」。"; }
+["code", "name"].forEach(id => $(id).addEventListener("input", seeName));
 const cleanName = s => s.replace(/[\\/:*?"<>|#%\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+/, "");
 
 // ---- The chosen square becomes a 1024 px JPEG (the size the swatch site keeps), shown on the shoe as camCm x camCm
@@ -236,8 +276,10 @@ function showShot(seam) {
 }
 $("seams").addEventListener("click", e => { const b = e.target.closest("[data-seam]"); if (b && rawShot) showShot(b.dataset.seam === "1"); });
 function setShot(src, sx, sy, side) {
-  rawShot = document.createElement("canvas"); rawShot.width = rawShot.height = 1024;
-  rawShot.getContext("2d").drawImage(src, sx, sy, side, side, 0, 0, 1024, 1024);
+  const shot = document.createElement("canvas"); shot.width = shot.height = 1024;
+  shot.getContext("2d").drawImage(src, sx, sy, side, side, 0, 0, 1024, 1024);
+  if (shotFor === "edit") { shotFor = null; return editShot(shot); }
+  rawShot = shot;
   showShot(false);
   haveShot = true; shotCm = camCm;
   $("shotSize").textContent = `這張代表 ${shotCm} × ${shotCm} cm，鞋子上會照這個大小重複鋪。`;
@@ -248,9 +290,9 @@ function setShot(src, sx, sy, side) {
 $("retake").addEventListener("click", () => { haveShot = false; $("editCard").hidden = true; $("pickers").hidden = false; say($("status"), ""); });
 
 $("publish").addEventListener("click", async () => {
-  const name = cleanName($("name").value);
+  const name = fullName($("code").value, $("name").value);
   if (!haveShot) return;
-  if (!name) { $("name").focus(); return say($("status"), "請先輸入名稱。", "bad"); }
+  if (!name) { $("code").focus(); return say($("status"), "請先輸入編號或名稱。", "bad"); }
   const path = `${kind}/${name}.jpg`;
   if (!token) {
     return say($("status"), `試用模式：正式上架時，這張會放進「${KIND_NAME[kind]}」，名稱「${name}」，大小 ${shotCm} cm，約 1–2 分鐘後出現在網站。這次沒有上架。`, "wait");
@@ -269,7 +311,7 @@ $("publish").addEventListener("click", async () => {
     const key = `${kind}/${name}`;
     await editJson("order.json", [], old => [key, ...(old.length ? old : SHOP.map(keyOf)).filter(k => k !== key)], `Swatch ${name} (${kind}) goes first`);
     pending.push({ name, kind, cm: shotCm, url: $("out").toDataURL("image/jpeg", 0.6) });
-    haveShot = false; $("name").value = ""; $("editCard").hidden = true; $("pickers").hidden = false;
+    haveShot = false; $("name").value = ""; $("code").value = ""; seeName(); $("editCard").hidden = true; $("pickers").hidden = false;
     say($("status"), `「${name}」已上傳，網站更新中（約 1–2 分鐘）…`, "wait");
     renderList(); watchSite();
   } catch (e) {
@@ -287,7 +329,21 @@ async function nameTaken(name) {
 // ---- What customers see now (the swatch site's list), plus anything just uploaded that is still being published,
 // and what is 下架 (off the shelf: kept in the repo, listed in hidden.json, not shown to customers). ----
 let SHOP = [], OFF = [], watching = null;
+// Away from the real site and with no key (the trial page), the list shows ten made-up swatches to try 編輯 and 排序 on.
+const DEMO = !token && location.hostname !== "willmore-pixel.github.io";
+const demoTile = (c1, c2) => { const c = document.createElement("canvas"); c.width = c.height = 96; const x = c.getContext("2d");
+  x.fillStyle = c1; x.fillRect(0, 0, 96, 96); x.fillStyle = c2; for (let i = 0; i < 96; i += 24) for (let j = (i / 24 % 2) * 12; j < 96; j += 24) { x.beginPath(); x.arc(j + 6, i + 12, 5, 0, 7); x.fill(); } return c.toDataURL(); };
 async function loadShop() {
+  if (DEMO) {
+    if (!SHOP.length) SHOP = [
+      ["cw-01 (黑色牛皮)", "leather", "#232020", "#2c2827", 30], ["sh-25 (米色牛皮)", "leather", "#d9c3a0", "#cfb690", 15],
+      ["cw-209 (油亮紅棕色牛皮)", "leather", "#7a3420", "#8a4028", 10], ["cw-27 (麂皮印花)", "leather", "#b58a5c", "#6e4a2c", 20],
+      ["sh-07 (酒紅牛皮)", "leather", "#6b1f2c", "#7a2634", 30], ["cw-33 (橄欖綠牛皮)", "leather", "#5f6230", "#6b6e38", 30],
+      ["Calico-110", "canvas", "#9cb6d0", "#f4e7c8", 10], ["Calico-124 (粉花)", "canvas", "#2f5d46", "#f1b8c0", 10],
+      ["Calico-66 (條紋)", "canvas", "#e9e2d0", "#4a5a78", 15], ["Calico-84 (芥末黃)", "canvas", "#d9a42b", "#f5de8a", 10]
+    ].map(([name, kind, c1, c2, cm]) => ({ name, kind, url: demoTile(c1, c2), cm }));
+    return renderList();
+  }
   try {
     const [r, h] = await Promise.all([fetch(SITE + "swatches.json", { cache: "no-store" }), fetch(SITE + "swatches-hidden.json", { cache: "no-store" })]);
     if (r.ok) SHOP = await r.json();
@@ -306,43 +362,65 @@ async function loadShop() {
     const now = SHOP.map(keyOf), want = ordered.filter(k => now.includes(k));
     if (now.filter(k => want.includes(k)).join("\n") === want.join("\n")) { sorting = false; ordered = null; say($("listStatus"), "新的順序已上線 ✓ 客人重新整理網站就看得到。", "ok"); }
   }
+  const entry = key => SHOP.find(s => keyOf(s) === key) || OFF.find(s => keyOf(s) === key);
+  for (const [key, r] of [...renaming]) {
+    const now = entry(r.to);
+    if (now && (r.to === key || !entry(key)) && (now.cm || 30) === r.cm && (r.v === undefined || now.v !== r.v)) { renaming.delete(key); say($("listStatus"), `「${nameOf(r.to)}」已更新 ✓ 客人重新整理網站就看得到。`, "ok"); }
+  }
   for (const key of [...showing]) if (listed(key)) { showing.delete(key); say($("listStatus"), `「${nameOf(key)}」已重新上架 ✓`, "ok"); }
   renderList();
 }
+// "v" (from build.py) changes when a swatch's photo is replaced, so the new picture shows instead of the browser's old copy.
+const picOf = s => s.url || SITE + s.file + (s.v ? "?v=" + s.v : "");
 function renderList() {
-  const cell = (n, k, url, isNew, isOff, cm, mv) => {
-    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key);
+  const cell = (n, k, url, isNew, isOff, cm, sortable) => {
+    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key) || renaming.has(key);
+    // The swatch being edited: its edit box sits at the top of the list; the tile stays in place, outlined.
+    if (mode === "rename" && renKey === key && renDraft && !busy) { editTop = editCell(key, url); return `<div class="sw editing-src"><i style="background-image:url('${url}')"></i>${esc(n)}<br>編輯中</div>`; }
     const btn = isNew || busy ? ""
+      : mode === "rename" ? `<button class="act" type="button" data-ren="${esc(key)}">編輯</button>`
       : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
       : isOff ? `<button class="act up" type="button" data-show="${esc(key)}">上架</button>`
       : mode === "hide" ? `<button class="act" type="button" data-hide="${esc(key)}">下架</button>` : "";
-    const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : `${KIND_NAME[k]} · ${cm || 30} cm`;
-    const arrows = mv ? `<div class="mv"><button type="button" data-mv="-1" data-key="${esc(key)}" aria-label="往前"${mv.first ? " disabled" : ""}>◀</button><button type="button" data-mv="1" data-key="${esc(key)}" aria-label="往後"${mv.last ? " disabled" : ""}>▶</button></div>` : "";
-    return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${mv && moved.has(key) ? " moved" : ""}"><i style="background-image:url('${url}')"></i>${btn}${arrows}${esc(n)}<br>${info}</div>`;
+    const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : renaming.has(key) ? "更新中…" : `${KIND_NAME[k]} · ${cm || 30} cm`;
+    const lifted = sortable && drag?.on && drag.key === key;
+    return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${sortable ? " sortable" : ""}${sortable && moved.has(key) ? " moved" : ""}${lifted ? " lifted" : ""}"${sortable ? ` data-key="${esc(key)}"` : ""}><i style="background-image:url('${url}')"></i>${btn}${esc(n)}<br>${info}</div>`;
   };
   // Customers see the swatches in this order, 皮革 first, then 布樣.
   const shop = shownOrder();
-  $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
+  const act = document.activeElement, typing = act && /^ren(Input|Code)$/.test(act.id) ? [act.id, act.selectionStart, act.selectionEnd] : null;
+  let editTop = "";
+  const listHtml = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
     ["leather", "canvas"].map(k => {
       const list = shop.filter(s => s.kind === k);
-      return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map((s, i) => cell(s.name, s.kind, SITE + s.file, false, false, s.cm,
-        mode === "sort" && { first: i === 0, last: i === list.length - 1 })).join("") : "";
+      return list.length ? `<p class="grp">${KIND_NAME[k]}</p>` + list.map(s => cell(s.name, s.kind, picOf(s), false, false, s.cm, mode === "sort")).join("") : "";
     }).join("");
-  $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, true, s.cm)).join("");
+  const offHtml = [...OFF].reverse().map(s => cell(s.name, s.kind, picOf(s), false, true, s.cm)).join("");
+  $("list").innerHTML = listHtml;
+  // The swatch being edited is shown on its own screen (editSheet) over the list.
+  const opening = !!editTop && $("editSheet").hidden;
+  if (editTop) $("editBody").innerHTML = editTop;
+  $("editSheet").hidden = !editTop; document.body.classList.toggle("sheet-open", !!editTop);
+  if (opening) { $("editSheet").scrollTop = 0; say($("editStatus"), ""); }
+  $("offList").innerHTML = offHtml;
   $("offWrap").hidden = !OFF.length;
+  if (typing && $(typing[0])) { $(typing[0]).focus(); $(typing[0]).setSelectionRange(typing[1], typing[2]); }
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
 // ---- 下架 shows a 下架 button on each swatch (one tap, it can be put back); 刪除 shows an ×: tap it, then tap again to confirm (no pop-ups). ----
-let mode = "", armedKey = null;  // mode: "" | "sort" | "hide" | "delete"
+let mode = "", armedKey = null;  // mode: "" | "rename" | "sort" | "hide" | "delete"
 const removing = new Set(), hiding = new Set(), showing = new Set();  // "kind/name" sent to the repo, until the swatch site shows the change
 function setMode(m) {
   const wasSort = mode === "sort";
-  mode = mode === m ? "" : m; armedKey = null;
+  mode = mode === m ? "" : m; armedKey = null; renKey = renDraft = null; dragEnd();
   if (mode === "sort") { draft = shownOrder().map(keyOf); moved.clear(); }
+  $("renameList").textContent = mode === "rename" ? "完成" : "編輯";
   $("sortList").textContent = mode === "sort" ? "完成" : "排序";
   $("hideList").textContent = mode === "hide" ? "完成" : "下架";
   $("editList").textContent = mode === "delete" ? "完成" : "刪除";
-  say($("listStatus"), mode === "sort" ? "按色卡下面的 ◀ ▶ 往前、往後移。排好了按右上角「完成」儲存。"
+  ["renameList", "sortList", "hideList", "editList"].forEach(id => $(id).classList.toggle("on", $(id).textContent === "完成"));
+  say($("listStatus"), mode === "rename" ? "按色卡上的「編輯」，可以換照片、改種類、大小、編號和名稱，再按「儲存」。客人存過的設計不會受影響。"
+    : mode === "sort" ? "按住色卡一下，再拖到想要的位置（皮革、布樣各自排）。排好了按上面黃色的「完成」儲存。"
     : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
     : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
   if (wasSort && draft) saveOrder();  // leaving 排序 saves the new order (and says so)
@@ -359,16 +437,81 @@ function shownOrder() {
   const rank = new Map(want.map((k, i) => [k, i]));
   return [...SHOP].sort((a, b) => (rank.get(keyOf(a)) ?? -1) - (rank.get(keyOf(b)) ?? -1));
 }
-$("list").addEventListener("click", e => {
-  const b = e.target.closest("[data-mv]"); if (!b || !draft) return;
-  const key = b.dataset.key, kind = key.split("/")[0], same = draft.filter(k => k.startsWith(kind + "/"));
-  const i = same.indexOf(key), j = i + +b.dataset.mv;
-  if (i < 0 || j < 0 || j >= same.length) return;
-  [same[i], same[j]] = [same[j], same[i]];
+// Drag to sort: press and hold a swatch (a moment on a phone, so a quick swipe still scrolls the page), then drag it
+// to where it should go within its kind. Near the top or bottom of the screen the page scrolls along.
+let drag = null;  // { key, x, y, on, ghost, timer, raf }
+const sortTile = t => mode === "sort" && t.closest?.(".sw.sortable[data-key]");
+function dragBegin() {
+  if (!drag) return;
+  const el = document.querySelector(`.sw.sortable[data-key="${CSS.escape(drag.key)}"]`); if (!el) return dragEnd();
+  const r = el.getBoundingClientRect(), g = el.cloneNode(true);
+  g.className = "sw drag-ghost"; g.removeAttribute("data-key");
+  Object.assign(g.style, { width: r.width + "px", left: r.left + "px", top: r.top + "px" });
+  drag.dx = drag.x - r.left; drag.dy = drag.y - r.top;
+  document.body.append(g); drag.ghost = g; drag.on = true;
+  navigator.vibrate?.(12);
+  renderList(); dragMove(drag.x, drag.y);
+  const scroll = () => {
+    if (!drag?.on) return;
+    const edge = 90, y = drag.y, v = y < edge ? -(edge - y) / 6 : y > innerHeight - edge ? (y - innerHeight + edge) / 6 : 0;
+    if (v) { scrollBy(0, v); dragOver(drag.x, drag.y); }
+    drag.raf = requestAnimationFrame(scroll);
+  };
+  drag.raf = requestAnimationFrame(scroll);
+}
+function dragMove(x, y) {
+  drag.x = x; drag.y = y;
+  if (!drag.on) return;
+  drag.ghost.style.transform = `translate(${x - drag.dx - parseFloat(drag.ghost.style.left)}px, ${y - drag.dy - parseFloat(drag.ghost.style.top)}px) scale(1.08)`;
+  dragOver(x, y);
+}
+function dragOver(x, y) {
+  const over = document.elementFromPoint(x, y)?.closest(".sw.sortable[data-key]");
+  if (!over || over.dataset.key === drag.key) return;
+  const kind = drag.key.split("/")[0], to = over.dataset.key;
+  if (!to.startsWith(kind + "/")) return;  // 皮革 and 布樣 each keep their own order
+  const same = draft.filter(k => k.startsWith(kind + "/")), i = same.indexOf(drag.key), j = same.indexOf(to);
+  same.splice(i, 1); same.splice(j, 0, drag.key);
   draft = [...draft.filter(k => !k.startsWith(kind + "/")), ...same];
   draft = [...draft.filter(k => k.startsWith("leather/")), ...draft.filter(k => !k.startsWith("leather/"))];
-  moved.add(key); renderList();
+  moved.add(drag.key); renderList();
+}
+function dragEnd() {
+  if (!drag) return;
+  clearTimeout(drag.timer); cancelAnimationFrame(drag.raf); drag.ghost?.remove();
+  const was = drag.on; drag = null;
+  if (was) renderList();
+}
+const list = $("list");
+list.addEventListener("touchstart", e => {
+  const t = sortTile(e.target); if (!t || e.touches.length > 1) return dragEnd();
+  drag = { key: t.dataset.key, x: e.touches[0].clientX, y: e.touches[0].clientY, x0: e.touches[0].clientX, y0: e.touches[0].clientY };
+  drag.timer = setTimeout(dragBegin, 250);
+  // The touch keeps going to the element first pressed, even after the list is redrawn while dragging and that element
+  // is gone from the page, so the rest of the touch is followed on that element itself.
+  const el = e.target, move = ev => {
+    if (!drag) return;
+    const p = ev.touches[0];
+    if (!drag.on) { if (Math.hypot(p.clientX - drag.x0, p.clientY - drag.y0) > 10) stop(); return; }  // a swipe: let the page scroll
+    ev.preventDefault(); dragMove(p.clientX, p.clientY);
+  }, stop = () => { dragEnd(); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", stop); el.removeEventListener("touchcancel", stop); };
+  el.addEventListener("touchmove", move, { passive: false });
+  el.addEventListener("touchend", stop); el.addEventListener("touchcancel", stop);
+}, { passive: true });
+list.addEventListener("contextmenu", e => { if (sortTile(e.target)) e.preventDefault(); });
+// Mouse: drag straight away.
+list.addEventListener("pointerdown", e => {
+  if (e.pointerType !== "mouse" || e.button) return;
+  const t = sortTile(e.target); if (!t) return;
+  e.preventDefault();
+  drag = { key: t.dataset.key, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, mouse: true };
 });
+addEventListener("pointermove", e => {
+  if (!drag?.mouse) return;
+  if (!drag.on) { drag.x = e.clientX; drag.y = e.clientY; if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 5) dragBegin(); return; }
+  dragMove(e.clientX, e.clientY);
+});
+addEventListener("pointerup", () => { if (drag?.mouse) dragEnd(); });
 async function saveOrder() {
   const next = draft, changed = moved.size > 0;
   draft = null; moved.clear();
@@ -385,6 +528,7 @@ async function saveOrder() {
   renderList();
 }
 let sorting = false;  // a saved order the swatch site doesn't show yet
+$("renameList").addEventListener("click", () => setMode("rename"));
 $("sortList").addEventListener("click", () => setMode("sort"));
 $("hideList").addEventListener("click", () => setMode("hide"));
 $("editList").addEventListener("click", () => setMode("delete"));
@@ -421,7 +565,9 @@ async function setOff(key, off) {
   } catch (err) { say($("listStatus"), fail(err), "bad"); }
   renderList();
 }
+$("editSheet").addEventListener("click", editClick);
 document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("click", async e => {
+  if (editClick(e)) return;
   const h = e.target.closest("[data-hide]"); if (h) return setOff(h.dataset.hide, true);
   const u = e.target.closest("[data-show]"); if (u) return setOff(u.dataset.show, false);
   const b = e.target.closest("[data-del]"); if (!b) return;
@@ -443,19 +589,159 @@ document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("
     // A deleted swatch leaves the 下架 list too, so a new photo with the same name isn't hidden.
     if (OFF.some(s => s.kind + "/" + s.name === key)) await editHidden(list => list.filter(k => k !== key), `Forget hidden swatch ${key}`);
     await editJson("sizes.json", {}, m => { const n = { ...m }; delete n[key]; return n; }, `Forget size of swatch ${key}`);
+    await editJson("renamed.json", {}, m => { const n = { ...m }; delete n[key]; return n; }, `Forget first name of swatch ${key}`);
     removing.add(key);
     say($("listStatus"), `「${name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
     watchSite();
   } catch (err) { say($("listStatus"), fail(err), "bad"); }
   renderList();
 }));
+// ---- 編輯: everything a swatch was uploaded with can be changed: the photo (camera or album, 原圖 or 2+), 皮革/布樣,
+// its size in cm, 編號 and 名稱. All of it goes to the repo in one commit: the photo file is renamed / moved / replaced,
+// and hidden.json / sizes.json / order.json follow. renamed.json keeps where the swatch first came from ("kind/file"),
+// so the swatch site keeps the picture's address and designs customers saved with it still find it. ----
+let renKey = null, renDraft = null, shotFor = null;  // shotFor "edit": the camera/album photo is for the swatch being edited
+const renaming = new Map();  // "kind/old name" -> { to: "kind/new name", cm, v }, until the swatch site shows the change
+function startEdit(key) {
+  const s = [...SHOP, ...OFF].find(x => keyOf(x) === key); if (!s) return;
+  renKey = key; renDraft = { ...splitName(s.name), kind: s.kind, cm: s.cm || 30, raw: null, out: null, seam: false, v: s.v };
+  renderList();
+}
+function editCell(s, url) {
+  const d = renDraft, seg = (attr, val, now, text) => `<button type="button" ${attr}="${val}" aria-pressed="${now === val}">${text}</button>`;
+  return `<div class="sw editing">` +
+    `<i style="background-image:url('${d.out ? d.out.toDataURL("image/jpeg", 0.7) : url}')"></i>` +
+    `<div class="ren-row"><button type="button" data-ren-shot="cam">📷 重拍</button><button type="button" data-ren-shot="album">🖼️ 從相簿換</button></div>` +
+    (d.raw ? `<span class="label">照片處理</span><div class="seg">${seg("data-ren-seam", "0", d.seam ? "1" : "0", "原圖")}${seg("data-ren-seam", "1", d.seam ? "1" : "0", "無縫處理 2+")}</div>` : "") +
+    `<span class="label">種類</span><div class="seg">${seg("data-ren-kind", "leather", d.kind, "皮革")}${seg("data-ren-kind", "canvas", d.kind, "布樣")}</div>` +
+    `<span class="label">大小（這張照片代表幾公分）</span><div class="cm-row"><button type="button" data-ren-cm="-1" aria-label="小一點">−</button><b>${d.cm} × ${d.cm} cm</b><button type="button" data-ren-cm="1" aria-label="大一點">+</button></div>` +
+    `<span class="label">編號</span><input class="field ren" id="renCode" type="text" maxlength="20" value="${esc(d.code)}" enterkeyhint="next" autocapitalize="off" aria-label="編號">` +
+    `<span class="label">名稱</span><input class="field ren" id="renInput" type="text" maxlength="40" value="${esc(d.name)}" enterkeyhint="done" aria-label="名稱">` +
+    `<div class="ren-row"><button type="button" data-ren-cancel>取消</button><button type="button" class="ok" data-ren-ok>儲存</button></div></div>`;
+}
+function editOut() {
+  const d = renDraft; if (!d?.raw) return;
+  const c = document.createElement("canvas"); c.width = c.height = 1024;
+  c.getContext("2d").drawImage(d.seam ? makeSeamless(d.raw, 1024) : d.raw, 0, 0);
+  d.out = c;
+}
+document.addEventListener("input", e => { if (!renDraft) return; if (e.target.id === "renInput") renDraft.name = e.target.value; if (e.target.id === "renCode") renDraft.code = e.target.value; });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  if (e.target.id === "renCode") { e.preventDefault(); $("renInput").focus(); }
+  if (e.target.id === "renInput") { e.preventDefault(); e.target.blur(); }
+});
+function editClick(e) {
+  const rn = e.target.closest("[data-ren]"); if (rn) { startEdit(rn.dataset.ren); return true; }
+  if (!renDraft) return false;
+  if (e.target.closest("[data-ren-cancel]")) { renKey = renDraft = null; renderList(); return true; }
+  if (e.target.closest("[data-ren-ok]")) { saveEdit(); return true; }
+  const k = e.target.closest("[data-ren-kind]"); if (k) { renDraft.kind = k.dataset.renKind; renderList(); return true; }
+  const c = e.target.closest("[data-ren-cm]"); if (c) { renDraft.cm = Math.min(30, Math.max(5, renDraft.cm + +c.dataset.renCm)); renderList(); return true; }
+  const m = e.target.closest("[data-ren-seam]"); if (m) { renDraft.seam = m.dataset.renSeam === "1"; editOut(); renderList(); return true; }
+  const p = e.target.closest("[data-ren-shot]");
+  if (p) {
+    shotFor = "edit"; setCamCm(renDraft.cm);
+    if (p.dataset.renShot === "album") $("renAlbum").click();
+    else if (useNative || !navigator.mediaDevices?.getUserMedia) { useNative = false; $("renSnap").click(); }
+    else openCam($("renSnap"));
+    return true;
+  }
+  return false;
+}
+["renSnap", "renAlbum"].forEach(id => $(id).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) { shotFor = "edit"; openCrop(f); } }));
+// Called by the camera / crop view when the photo is for the swatch being edited.
+function editShot(canvas) {
+  if (!renDraft) return;
+  renDraft.raw = canvas; renDraft.seam = false; renDraft.cm = camCm; editOut();
+  renderList();
+
+}
+async function saveEdit() {
+  const key = renKey, d = renDraft; if (!key || !d) return;
+  const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = fullName(d.code, d.name), toKind = d.kind, toKey = `${toKind}/${to}`;
+  const cur = [...SHOP, ...OFF].find(x => keyOf(x) === key);
+  if (!to) { $("renCode")?.focus(); return say($("editStatus"), "請輸入編號或名稱。", "bad"); }
+  const what = [to !== from && `名稱改成「${to}」`, toKind !== kind && `種類改成${KIND_NAME[toKind]}`, d.cm !== (cur?.cm || 30) && `大小改成 ${d.cm} cm`, d.out && "換了照片"].filter(Boolean);
+  if (!what.length) { renKey = renDraft = null; renderList(); return say($("listStatus"), "沒有改任何東西。", "wait"); }
+  const lower = to.toLowerCase();
+  if ([...SHOP, ...OFF].some(x => x.name.toLowerCase() === lower && keyOf(x) !== key)) return say($("editStatus"), `已經有叫「${to}」的色卡，請換個名字。`, "bad");
+  if (!token) {
+    renKey = renDraft = null;
+    // The trial's made-up swatches change right away, so the result can be seen.
+    if (DEMO && cur) Object.assign(cur, { name: to, kind: toKind, cm: d.cm }, d.out ? { url: d.out.toDataURL("image/jpeg", 0.7) } : {});
+    if (ordered) ordered = ordered.map(k => k === key ? toKey : k);
+    renderList();
+    return say($("listStatus"), `試用模式：正式版會更新「${from}」（${what.join("、")}），約 1–2 分鐘後網站就會換好。真的色卡這次沒有改。`, "wait");
+  }
+  renKey = renDraft = null; renaming.set(key, { to: toKey, cm: d.cm, v: d.out ? cur?.v : undefined }); renderList();
+  say($("listStatus"), `儲存「${from}」的修改中…`, "wait");
+  try {
+    let photoSha = null;
+    if (d.out) {
+      const blob = await new Promise(res => d.out.toBlob(res, "image/jpeg", 0.9));
+      const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(",")[1]); fr.readAsDataURL(blob); });
+      const b = await gh("/git/blobs", { method: "POST", body: { content: b64, encoding: "base64" } });
+      if (!b.ok) throw new Error(b.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : b.status === 403 || b.status === 404 ? "這把金鑰沒有寫入權限。" : `照片上傳失敗（${b.status}），請再試一次。`);
+      photoSha = (await b.json()).sha;
+    }
+    for (let tries = 0; ; tries++) {
+      const ref = await gh("/git/ref/heads/main");
+      if (!ref.ok) throw new Error(ref.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `讀不到色卡庫（${ref.status}）。`);
+      const head = (await ref.json()).object.sha;
+      const commit = await (await gh(`/git/commits/${head}`)).json();
+      const tree = await (await gh(`/git/trees/${commit.tree.sha}?recursive=1`)).json();
+      const blobs = new Map(tree.tree.filter(t => t.type === "blob").map(t => [t.path, t]));
+      const stem = p => p.slice(p.indexOf("/") + 1).replace(/\.[^.]+$/, "");
+      const photos = [...blobs.values()].filter(t => t.path.startsWith(kind + "/") && stem(t.path) === from);
+      if (!photos.length) throw new Error(`色卡庫裡找不到「${from}」，可能已經刪掉或改過了。`);
+      // Same name in either folder would confuse customers (case aside, so the file names never clash either).
+      if ([...blobs.keys()].some(p => /^(leather|canvas)\//.test(p) && stem(p).toLowerCase() === lower && !photos.some(t => t.path === p)))
+        throw new Error(`已經有叫「${to}」的色卡，請換個名字。`);
+      const readJson = async (path, empty) => {
+        const b = blobs.get(path); if (!b) return empty;
+        try { return JSON.parse(utf8b64((await (await gh(`/git/blobs/${b.sha}`)).json()).content)); } catch { return empty; }
+      };
+      const main = photos[0], ext = d.out ? ".jpg" : main.path.slice(main.path.lastIndexOf(".")), newPath = `${toKind}/${to}${ext}`;
+      const changes = [{ path: newPath, mode: main.mode, type: "blob", sha: photoSha || main.sha }];
+      for (const p of photos) if (p.path !== newPath) changes.push({ path: p.path, mode: p.mode, type: "blob", sha: null });
+      const json = (path, data) => changes.push({ path, mode: "100644", type: "blob", content: JSON.stringify(data, null, 1) + "\n" });
+      const swap = k => k === key ? toKey : k;
+      const hidden = await readJson("hidden.json", []), sizes = await readJson("sizes.json", {}), order = await readJson("order.json", null), first = await readJson("renamed.json", {});
+      if (toKey !== key && hidden.includes(key)) json("hidden.json", hidden.map(swap));
+      const ns = Object.fromEntries(Object.entries(sizes).filter(([k]) => k !== key)); ns[toKey] = d.cm;
+      json("sizes.json", ns);
+      if (toKey !== key && order && order.includes(key)) json("order.json", order.map(swap));
+      if (toKey !== key) {
+        let origin = first[key] || main.path;
+        if (!origin.includes("/")) origin = `${kind}/${origin}`;
+        const nf = { ...first }; delete nf[key];
+        if (origin !== newPath) nf[toKey] = origin;
+        json("renamed.json", nf);
+      }
+      const t = await gh("/git/trees", { method: "POST", body: { base_tree: commit.tree.sha, tree: changes } });
+      if (!t.ok) throw new Error(t.status === 403 || t.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${t.status}），請再試一次。`);
+      const c = await gh("/git/commits", { method: "POST", body: { message: `Edit swatch ${from} (${kind}): ${toKey}, ${d.cm} cm${d.out ? ", new photo" : ""}`, tree: (await t.json()).sha, parents: [head] } });
+      if (!c.ok) throw new Error(`儲存失敗（${c.status}），請再試一次。`);
+      const u = await gh("/git/refs/heads/main", { method: "PATCH", body: { sha: (await c.json()).sha } });
+      if (u.ok) break;
+      if (u.status === 422 && tries < 2) continue;  // something else was saved at the same moment: start again from it
+      throw new Error(u.status === 403 || u.status === 404 ? "這把金鑰沒有寫入權限。" : `儲存失敗（${u.status}），請再試一次。`);
+    }
+    // Keep a saved-but-not-yet-live order showing the swatch under its new name.
+    if (ordered) ordered = ordered.map(k => k === key ? toKey : k);
+    say($("listStatus"), `「${from}」已儲存（${what.join("、")}），網站更新中（約 1–2 分鐘）…`, "wait");
+    watchSite();
+  } catch (err) { renaming.delete(key); say($("listStatus"), fail(err), "bad"); }
+  renderList();
+}
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function watchSite() {
   clearInterval(watching);
   let tries = 0;
   watching = setInterval(async () => {
     await loadShop();
-    if (!pending.length && !removing.size && !hiding.size && !showing.size && !sorting) clearInterval(watching);
+    if (!pending.length && !removing.size && !hiding.size && !showing.size && !renaming.size && !sorting) clearInterval(watching);
     else if (++tries > 40) { clearInterval(watching); say($("status"), "上傳成功，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }
@@ -610,6 +896,7 @@ $("camShot").addEventListener("click", () => {
   setShot(v, sx, sy, side);
   closeCam();
 });
+["snapIn", "albumIn"].forEach(id => $(id).addEventListener("click", () => { shotFor = null; }, true));
 ["snapIn", "albumIn"].forEach(id => $(id).addEventListener("change", e => { if (e.target.files[0]) openCrop(e.target.files[0]); e.target.value = ""; }));
 $("snapIn").addEventListener("click", e => {
   if (useNative || !navigator.mediaDevices?.getUserMedia) { useNative = false; return; }
