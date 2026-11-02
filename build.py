@@ -42,8 +42,8 @@ try:
 except Exception:
     sw_order = []
 sw_rank = {k: i for i, k in enumerate(sw_order)}
-# renamed.json: swatches renamed on the upload page, as {"kind/new name": "original file name"}. The published picture
-# keeps the address it had under its first name, so designs customers saved with it still find it.
+# renamed.json: swatches changed with 編輯 on the upload page (name or 皮革/布樣), as {"kind/new name": "first kind/first file name"}.
+# The published picture keeps the address it had at first, so designs customers saved with it still find it.
 try:
     first_name = json.loads((ROOT / "renamed.json").read_text(encoding="utf-8"))
 except Exception:
@@ -60,9 +60,12 @@ for kind in ("leather", "canvas"):
             continue
         img = ImageOps.fit(img, (SIZE, SIZE), Image.LANCZOS)
         # Named by a hash of the original path so a swatch keeps its address (and customers' saved picks) between builds.
-        name = f"s/{kind}-{hashlib.md5(first_name.get(f"{kind}/{src.stem}", src.name).encode()).hexdigest()[:10]}.jpg"
+        first_kind, _, first_file = first_name.get(f"{kind}/{src.stem}", f"{kind}/{src.name}").rpartition("/")
+        name = f"s/{first_kind or kind}-{hashlib.md5(first_file.encode()).hexdigest()[:10]}.jpg"
         img.save(OUT / name, quality=85)
-        sw = {"name": src.stem, "kind": kind, "file": name, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
+        # v changes when the photo is replaced, so the upload page can show the new one straight away.
+        v = hashlib.md5(src.read_bytes()).hexdigest()[:8]
+        sw = {"name": src.stem, "kind": kind, "file": name, "v": v, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
         (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
 
 by_order = lambda s: (("leather", "canvas").index(s["kind"]), sw_rank.get(f"{s['kind']}/{s['name']}", -1))
