@@ -66,6 +66,13 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .mv button { flex: 1; height: 30px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 900; padding: 0; }
 .mv button:disabled { background: var(--tile); color: var(--line); }
 .sw.moved i { border-color: var(--accent); }
+/* 改名: the swatch being renamed takes a whole row and shows a name box with 取消 / 儲存 under it. */
+.sw.editing { grid-column: 1 / -1; padding: 10px; border-radius: 14px; background: var(--panel); border: 2px solid var(--accent); }
+.sw.editing i { width: 110px; justify-self: center; }
+.sw .ren { padding: 8px 10px; font-size: 15px; border-radius: 10px; text-align: center; }
+.sw .ren-row { display: flex; gap: 6px; }
+.sw .ren-row button { flex: 1; height: 34px; border-radius: 10px; border: 2px solid var(--line); background: var(--tile); color: var(--fg); font-size: 14px; font-weight: 900; padding: 0; }
+.sw .ren-row button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .hidden-head { margin: 6px 0 10px; }
 .small { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.5; }
 .small a { color: var(--accent); }
@@ -150,7 +157,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 
     <p class="status" id="status"></p>
 
-    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
+    <div class="list-head"><h2>目前的色卡</h2><div class="heads"><button class="link-btn" id="renameList" type="button">改名</button><button class="link-btn" id="sortList" type="button">排序</button><button class="link-btn" id="hideList" type="button">下架</button><button class="link-btn" id="editList" type="button">刪除</button></div></div>
     <p class="status" id="listStatus"></p>
     <div class="grid" id="list"></div>
     <p class="small" id="listNote"></p>
@@ -306,22 +313,28 @@ async function loadShop() {
     const now = SHOP.map(keyOf), want = ordered.filter(k => now.includes(k));
     if (now.filter(k => want.includes(k)).join("\n") === want.join("\n")) { sorting = false; ordered = null; say($("listStatus"), "新的順序已上線 ✓ 客人重新整理網站就看得到。", "ok"); }
   }
+  for (const [key, to] of [...renaming]) if ((listed(to) || off(to)) && !listed(key) && !off(key)) { renaming.delete(key); say($("listStatus"), `已改名為「${nameOf(to)}」✓ 客人重新整理網站就看得到。`, "ok"); }
   for (const key of [...showing]) if (listed(key)) { showing.delete(key); say($("listStatus"), `「${nameOf(key)}」已重新上架 ✓`, "ok"); }
   renderList();
 }
 function renderList() {
   const cell = (n, k, url, isNew, isOff, cm, mv) => {
-    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key);
+    const key = k + "/" + n, gone = removing.has(key), armed = armedKey === key, busy = gone || hiding.has(key) || showing.has(key) || renaming.has(key);
+    if (mode === "rename" && renKey === key && !busy) return `<div class="sw editing"><i style="background-image:url('${url}')"></i>` +
+      `<input class="field ren" id="renInput" type="text" maxlength="40" value="${esc(renDraft)}" enterkeyhint="done" aria-label="新的名稱">` +
+      `<div class="ren-row"><button type="button" data-ren-cancel>取消</button><button type="button" class="ok" data-ren-ok>儲存</button></div>${KIND_NAME[k]} · ${cm || 30} cm</div>`;
     const btn = isNew || busy ? ""
+      : mode === "rename" ? `<button class="act" type="button" data-ren="${esc(key)}">改名</button>`
       : mode === "delete" ? `<button class="x" type="button" data-del="${esc(key)}" aria-label="刪除 ${esc(n)}">${armed ? "再按一次刪除" : "×"}</button>`
       : isOff ? `<button class="act up" type="button" data-show="${esc(key)}">上架</button>`
       : mode === "hide" ? `<button class="act" type="button" data-hide="${esc(key)}">下架</button>` : "";
-    const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : `${KIND_NAME[k]} · ${cm || 30} cm`;
+    const info = isNew ? "上架中…" : gone ? "刪除中…" : hiding.has(key) ? "下架中…" : showing.has(key) ? "上架中…" : renaming.has(key) ? `改成「${esc(renaming.get(key).split("/").slice(1).join("/"))}」中…` : `${KIND_NAME[k]} · ${cm || 30} cm`;
     const arrows = mv ? `<div class="mv"><button type="button" data-mv="-1" data-key="${esc(key)}" aria-label="往前"${mv.first ? " disabled" : ""}>◀</button><button type="button" data-mv="1" data-key="${esc(key)}" aria-label="往後"${mv.last ? " disabled" : ""}>▶</button></div>` : "";
     return `<div class="sw${isNew ? " new" : ""}${busy ? " gone" : ""}${armed ? " armed" : ""}${mv && moved.has(key) ? " moved" : ""}"><i style="background-image:url('${url}')"></i>${btn}${arrows}${esc(n)}<br>${info}</div>`;
   };
   // Customers see the swatches in this order, 皮革 first, then 布樣.
   const shop = shownOrder();
+  const typing = document.activeElement?.id === "renInput" ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
   $("list").innerHTML = pending.map(p => cell(p.name, p.kind, p.url, true, false, p.cm)).join("") +
     ["leather", "canvas"].map(k => {
       const list = shop.filter(s => s.kind === k);
@@ -330,19 +343,22 @@ function renderList() {
     }).join("");
   $("offList").innerHTML = [...OFF].reverse().map(s => cell(s.name, s.kind, SITE + s.file, false, true, s.cm)).join("");
   $("offWrap").hidden = !OFF.length;
+  if (typing && $("renInput")) { $("renInput").focus(); $("renInput").setSelectionRange(...typing); }
   if (!pending.length && !SHOP.length && !$("listNote").textContent) $("listNote").textContent = "還沒有色卡。";
 }
 // ---- 下架 shows a 下架 button on each swatch (one tap, it can be put back); 刪除 shows an ×: tap it, then tap again to confirm (no pop-ups). ----
-let mode = "", armedKey = null;  // mode: "" | "sort" | "hide" | "delete"
+let mode = "", armedKey = null;  // mode: "" | "rename" | "sort" | "hide" | "delete"
 const removing = new Set(), hiding = new Set(), showing = new Set();  // "kind/name" sent to the repo, until the swatch site shows the change
 function setMode(m) {
   const wasSort = mode === "sort";
-  mode = mode === m ? "" : m; armedKey = null;
+  mode = mode === m ? "" : m; armedKey = null; renKey = null;
   if (mode === "sort") { draft = shownOrder().map(keyOf); moved.clear(); }
+  $("renameList").textContent = mode === "rename" ? "完成" : "改名";
   $("sortList").textContent = mode === "sort" ? "完成" : "排序";
   $("hideList").textContent = mode === "hide" ? "完成" : "下架";
   $("editList").textContent = mode === "delete" ? "完成" : "刪除";
-  say($("listStatus"), mode === "sort" ? "按色卡下面的 ◀ ▶ 往前、往後移。排好了按右上角「完成」儲存。"
+  say($("listStatus"), mode === "rename" ? "按色卡上的「改名」，打新的名稱，再按「儲存」。客人存過的設計不會受影響。"
+    : mode === "sort" ? "按色卡下面的 ◀ ▶ 往前、往後移。排好了按右上角「完成」儲存。"
     : mode === "hide" ? "按色卡上的「下架」，客人就看不到這張，照片會留著，之後可以再上架。"
     : mode === "delete" ? "按色卡右上角的 ×，再按一次確認，就會永久刪除（照片也會刪掉）。" : "", "wait");
   if (wasSort && draft) saveOrder();  // leaving 排序 saves the new order (and says so)
@@ -385,6 +401,7 @@ async function saveOrder() {
   renderList();
 }
 let sorting = false;  // a saved order the swatch site doesn't show yet
+$("renameList").addEventListener("click", () => setMode("rename"));
 $("sortList").addEventListener("click", () => setMode("sort"));
 $("hideList").addEventListener("click", () => setMode("hide"));
 $("editList").addEventListener("click", () => setMode("delete"));
@@ -422,6 +439,9 @@ async function setOff(key, off) {
   renderList();
 }
 document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("click", async e => {
+  const rn = e.target.closest("[data-ren]"); if (rn) { renKey = rn.dataset.ren; renDraft = renKey.split("/").slice(1).join("/"); renderList(); const f = $("renInput"); f.focus(); f.select(); return; }
+  if (e.target.closest("[data-ren-cancel]")) { renKey = null; return renderList(); }
+  if (e.target.closest("[data-ren-ok]")) return renameSwatch();
   const h = e.target.closest("[data-hide]"); if (h) return setOff(h.dataset.hide, true);
   const u = e.target.closest("[data-show]"); if (u) return setOff(u.dataset.show, false);
   const b = e.target.closest("[data-del]"); if (!b) return;
@@ -443,19 +463,90 @@ document.querySelectorAll("#list, #offList").forEach(el => el.addEventListener("
     // A deleted swatch leaves the 下架 list too, so a new photo with the same name isn't hidden.
     if (OFF.some(s => s.kind + "/" + s.name === key)) await editHidden(list => list.filter(k => k !== key), `Forget hidden swatch ${key}`);
     await editJson("sizes.json", {}, m => { const n = { ...m }; delete n[key]; return n; }, `Forget size of swatch ${key}`);
+    await editJson("renamed.json", {}, m => { const n = { ...m }; delete n[key]; return n; }, `Forget first name of swatch ${key}`);
     removing.add(key);
     say($("listStatus"), `「${name}」已刪除，網站更新中（約 1–2 分鐘）…`, "wait");
     watchSite();
   } catch (err) { say($("listStatus"), fail(err), "bad"); }
   renderList();
 }));
+// ---- 改名: the photo's file is renamed (its name is what customers see), and hidden.json / sizes.json / order.json follow,
+// all in one commit. renamed.json keeps the first file name, so the swatch site keeps the picture's address and designs
+// customers saved with it still work. ----
+let renKey = null, renDraft = "";
+const renaming = new Map();  // "kind/old name" -> "kind/new name", until the swatch site shows the new name
+document.addEventListener("input", e => { if (e.target.id === "renInput") renDraft = e.target.value; });
+document.addEventListener("keydown", e => { if (e.target.id === "renInput" && e.key === "Enter") { e.preventDefault(); renameSwatch(); } });
+async function renameSwatch() {
+  const key = renKey; if (!key) return;
+  const kind = key.split("/")[0], from = key.slice(kind.length + 1), to = cleanName(renDraft);
+  if (!to) { $("renInput")?.focus(); return say($("listStatus"), "請輸入新的名稱。", "bad"); }
+  if (to === from) { renKey = null; renderList(); return say($("listStatus"), "名稱沒有改。", "wait"); }
+  if (!token) {
+    renKey = null; renderList();
+    return say($("listStatus"), `試用模式：正式版會把「${from}」改名為「${to}」，約 1–2 分鐘後網站就會換成新名字。這次沒有改。`, "wait");
+  }
+  const toKey = `${kind}/${to}`;
+  renKey = null; renaming.set(key, toKey); renderList();
+  say($("listStatus"), `改名中：「${from}」→「${to}」…`, "wait");
+  try {
+    // Same name in either folder would confuse customers (case aside, so the file names never clash either).
+    const lower = to.toLowerCase();
+    for (const k of ["leather", "canvas"]) {
+      const r = await gh(`/contents/${k}`);
+      if (r.ok && (await r.json()).some(f => f.name.replace(/\.[^.]+$/, "").toLowerCase() === lower && !(k === kind && f.name.replace(/\.[^.]+$/, "") === from)))
+        throw new Error(`已經有叫「${to}」的色卡，請換個名字。`);
+    }
+    for (let tries = 0; ; tries++) {
+      const ref = await gh("/git/ref/heads/main");
+      if (!ref.ok) throw new Error(ref.status === 401 ? "金鑰不正確或已過期，請到「設定」重新輸入。" : `讀不到色卡庫（${ref.status}）。`);
+      const head = (await ref.json()).object.sha;
+      const commit = await (await gh(`/git/commits/${head}`)).json();
+      const tree = await (await gh(`/git/trees/${commit.tree.sha}?recursive=1`)).json();
+      const blobs = new Map(tree.tree.filter(t => t.type === "blob").map(t => [t.path, t]));
+      const photos = [...blobs.values()].filter(t => t.path.startsWith(kind + "/") && t.path.slice(kind.length + 1).replace(/\.[^.]+$/, "") === from);
+      if (!photos.length) throw new Error(`色卡庫裡找不到「${from}」，可能已經刪掉或改名了。`);
+      const readJson = async (path, empty) => {
+        const b = blobs.get(path); if (!b) return empty;
+        try { return JSON.parse(utf8b64((await (await gh(`/git/blobs/${b.sha}`)).json()).content)); } catch { return empty; }
+      };
+      const changes = [];
+      for (const p of photos) {
+        const ext = p.path.slice(p.path.lastIndexOf("."));
+        changes.push({ path: `${kind}/${to}${ext}`, mode: p.mode, type: "blob", sha: p.sha }, { path: p.path, mode: p.mode, type: "blob", sha: null });
+      }
+      const json = (path, data) => changes.push({ path, mode: "100644", type: "blob", content: JSON.stringify(data, null, 1) + "\n" });
+      const swap = k => k === key ? toKey : k;
+      const hidden = await readJson("hidden.json", []), sizes = await readJson("sizes.json", {}), order = await readJson("order.json", null), first = await readJson("renamed.json", {});
+      if (hidden.includes(key)) json("hidden.json", hidden.map(swap));
+      if (key in sizes) json("sizes.json", Object.fromEntries(Object.entries(sizes).map(([k, v]) => [swap(k), v])));
+      if (order && order.includes(key)) json("order.json", order.map(swap));
+      const firstFile = first[key] || photos[0].path.slice(kind.length + 1);
+      const nf = { ...first }; delete nf[key]; nf[toKey] = firstFile;
+      json("renamed.json", nf);
+      const t = await gh("/git/trees", { method: "POST", body: { base_tree: commit.tree.sha, tree: changes } });
+      if (!t.ok) throw new Error(t.status === 403 || t.status === 404 ? "這把金鑰沒有寫入權限。" : `改名失敗（${t.status}），請再試一次。`);
+      const c = await gh("/git/commits", { method: "POST", body: { message: `Rename swatch ${from} to ${to} (${kind})`, tree: (await t.json()).sha, parents: [head] } });
+      if (!c.ok) throw new Error(`改名失敗（${c.status}），請再試一次。`);
+      const u = await gh("/git/refs/heads/main", { method: "PATCH", body: { sha: (await c.json()).sha } });
+      if (u.ok) break;
+      if (u.status === 422 && tries < 2) continue;  // something else was saved at the same moment: start again from it
+      throw new Error(u.status === 403 || u.status === 404 ? "這把金鑰沒有寫入權限。" : `改名失敗（${u.status}），請再試一次。`);
+    }
+    // Keep a saved-but-not-yet-live order showing the swatch under its new name.
+    if (ordered) ordered = ordered.map(k => k === key ? toKey : k);
+    say($("listStatus"), `已改名為「${to}」，網站更新中（約 1–2 分鐘）…`, "wait");
+    watchSite();
+  } catch (err) { renaming.delete(key); say($("listStatus"), fail(err), "bad"); }
+  renderList();
+}
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function watchSite() {
   clearInterval(watching);
   let tries = 0;
   watching = setInterval(async () => {
     await loadShop();
-    if (!pending.length && !removing.size && !hiding.size && !showing.size && !sorting) clearInterval(watching);
+    if (!pending.length && !removing.size && !hiding.size && !showing.size && !renaming.size && !sorting) clearInterval(watching);
     else if (++tries > 40) { clearInterval(watching); say($("status"), "上傳成功，但網站還沒更新完成。稍後重新整理這頁看看。", "wait"); }
   }, 15000);
 }

@@ -42,6 +42,12 @@ try:
 except Exception:
     sw_order = []
 sw_rank = {k: i for i, k in enumerate(sw_order)}
+# renamed.json: swatches renamed on the upload page, as {"kind/new name": "original file name"}. The published picture
+# keeps the address it had under its first name, so designs customers saved with it still find it.
+try:
+    first_name = json.loads((ROOT / "renamed.json").read_text(encoding="utf-8"))
+except Exception:
+    first_name = {}
 swatches, swatches_hidden = [], []
 for kind in ("leather", "canvas"):
     for src in sorted((ROOT / kind).iterdir()):
@@ -54,7 +60,7 @@ for kind in ("leather", "canvas"):
             continue
         img = ImageOps.fit(img, (SIZE, SIZE), Image.LANCZOS)
         # Named by a hash of the original path so a swatch keeps its address (and customers' saved picks) between builds.
-        name = f"s/{kind}-{hashlib.md5(src.name.encode()).hexdigest()[:10]}.jpg"
+        name = f"s/{kind}-{hashlib.md5(first_name.get(f"{kind}/{src.stem}", src.name).encode()).hexdigest()[:10]}.jpg"
         img.save(OUT / name, quality=85)
         sw = {"name": src.stem, "kind": kind, "file": name, "cm": sizes.get(f"{kind}/{src.stem}", 30)}
         (swatches_hidden if f"{kind}/{src.stem}" in hidden_sw else swatches).append(sw)
