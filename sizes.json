@@ -7,7 +7,6 @@
  "leather/sh-01 (白色牛皮)": 10,
  "leather/cw-187(藍色磨面牛皮)": 30,
  "leather/cw-179(龜裂牛皮)": 30,
- "leather/cw-121 (塗料牛皮）": 12,
  "leather/cw-s26(灰白麂皮": 12,
  "leather/cw-s23(麂皮燙印)": 30,
  "leather/cw-39（帶毛皮革)": 30,
@@ -30,5 +29,6 @@
  "canvas/Calico-119": 12,
  "canvas/Calico-84": 12,
  "canvas/Calico-s14": 10,
- "canvas/Calico-s15": 10
+ "canvas/Calico-s15": 10,
+ "leather/cw-121 (塗料牛皮)": 12
 }
