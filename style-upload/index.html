@@ -1260,7 +1260,7 @@ const thumbSvg = (st, prefix) => `<svg viewBox="${st.viewBox}">${artMarkup(st, p
 // ---- Made here once, so customers' phones don't have to (AIKA PLAY uses them when a style has them) ----
 // st.seen: for each part shape (by item), the edge of what can be seen of it (its shape minus everything painted over
 // it except the laces), which is where the dashed outline round a chosen part goes. The same tracing as AIKA PLAY's.
-// st.thumb: the style card's small picture as AIKA PLAY would draw it (all parts white, first lace colour (beige), gold buckle).
+// st.thumb: the style card's small picture, the right top view over the side view (all parts white, first lace colour, gold buckle).
 const TRACE_PX = 3;  // canvas pixels per drawing unit
 async function traceSeen(st, i) {
   const it = st.items[i], [vx, vy, vw, vh] = st.viewBox.split(/[\s,]+/).map(Number), S = TRACE_PX;
@@ -1336,10 +1336,52 @@ async function seenOf(st) {
   }
   return seen;
 }
+// The style card shows two views, like the shop's first cards: the right foot's top view above the side view, both at
+// the same scale. The views are found the way AIKA PLAY finds them: the widest empty bands across the drawing.
+function cardViews(st) {
+  const [vx, vy, vw, vh] = st.viewBox.split(/[\s,]+/).map(Number);
+  const host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  host.setAttribute("viewBox", st.viewBox); host.setAttribute("width", vw); host.setAttribute("height", vh);
+  host.style.cssText = "position:absolute;left:-99999px;top:0;visibility:hidden";
+  host.innerHTML = `<defs>${(st.defs || "").replaceAll("__P__", "cv")}</defs>` + st.items.map(it => typeof it === "string"
+    ? `<g>${it.replaceAll("__P__", "cv")}</g>` : `<path d="${it.d}"${it.t ? ` transform="${it.t}"` : ""}/>`).join("");
+  document.body.appendChild(host);
+  const hr = host.getBoundingClientRect(), k = vw / hr.width;
+  const ink = [...host.querySelectorAll("path,rect,circle,ellipse,polygon,polyline,line")].filter(el => !el.closest("defs")).flatMap(el => {
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    // White fill with no outline can't be seen (e.g. a white backing behind a sole), so it doesn't count.
+    if ((!cs.stroke || cs.stroke === "none") && /^rgb\(255, 255, 255\)$/.test(cs.fill)) return [];
+    const b = { x0: vx + (r.left - hr.left) * k, x1: vx + (r.right - hr.left) * k, y0: vy + (r.top - hr.top) * k, y1: vy + (r.bottom - hr.top) * k };
+    return b.x1 - b.x0 > 0 || b.y1 - b.y0 > 0 ? [b] : [];
+  });
+  host.remove();
+  const gaps = []; let reach = -Infinity;
+  for (const b of [...ink].sort((a, b) => a.y0 - b.y0)) {
+    const gap = b.y0 - reach, mid = (b.y0 + reach) / 2;
+    if (reach > -Infinity && gap > vh * 0.01 && mid > vy + vh * 0.1 && mid < vy + vh * 0.9) gaps.push({ gap, mid });
+    reach = Math.max(reach, b.y1);
+  }
+  const three = st.views === 3 && gaps.length >= 2;
+  const cuts = gaps.filter(g => three || (g.mid > vy + vh * 0.2 && g.mid < vy + vh * 0.8)).sort((a, b) => b.gap - a.gap).slice(0, three ? 2 : 1).map(g => g.mid).sort((a, b) => a - b);
+  if (!cuts.length) return null;
+  const extent = (from, to) => { const l = ink.filter(b => (b.y0 + b.y1) / 2 >= from && (b.y0 + b.y1) / 2 < to);
+    return l.length ? { x0: Math.min(...l.map(b => b.x0)), x1: Math.max(...l.map(b => b.x1)), y0: Math.min(...l.map(b => b.y0)), y1: Math.max(...l.map(b => b.y1)) } : null; };
+  const top = extent(-Infinity, cuts[0]), side = extent(cuts[cuts.length - 1], Infinity);
+  return top && side ? { top, side } : null;
+}
 async function thumbOf(st) {
   const W = 480, H = 360, fills = { ...(st.lace ? { [st.lace]: LACE_COLOURS[lacesOf(st)[0]][1] } : {}), ...(st.buckle ? { [st.buckle]: "url(#th-buckle)" } : {}) };
   const gold = `<linearGradient id="th-buckle" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="9" y2="9" spreadMethod="reflect"><stop offset="0" stop-color="#8a6a22"/><stop offset=".55" stop-color="#e8cf7a"/><stop offset="1" stop-color="#a7842f"/></linearGradient>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${st.viewBox}" width="${W}" height="${H}"><defs>${gold}</defs>${artMarkup(st, "th", fills)}</svg>`;
+  const v = cardViews(st);
+  let body = `<svg viewBox="${st.viewBox}" width="${W}" height="${H}">${artMarkup(st, "th", fills)}</svg>`;
+  if (v) {
+    const pad = 3, bw = b => b.x1 - b.x0 + 2 * pad, bh = b => b.y1 - b.y0 + 2 * pad, gap = 0.06;
+    const s = Math.min(W * 0.96 / Math.max(bw(v.top), bw(v.side)), H * 0.96 / (bh(v.top) + bh(v.side)) / (1 + gap));
+    const h1 = bh(v.top) * s, h2 = bh(v.side) * s, y1 = (H - h1 - h2 - (h1 + h2) * gap) / 2;
+    const view = (b, y, h, p) => `<svg x="${(W - bw(b) * s) / 2}" y="${y}" width="${bw(b) * s}" height="${h}" viewBox="${b.x0 - pad} ${b.y0 - pad} ${bw(b)} ${bh(b)}">${artMarkup(st, p, fills)}</svg>`;
+    body = view(v.top, y1, h1, "th") + view(v.side, y1 + h1 + (h1 + h2) * gap, h2, "ts");
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs>${gold}</defs>${body}</svg>`;
   const img = new Image();
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   await img.decode();
