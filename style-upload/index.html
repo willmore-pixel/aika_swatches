@@ -1145,12 +1145,15 @@ const LineArt = (() => {
 const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
 const LETTERS = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const DEFAULT_PART = { a: "Front", b: "Rear" };
-// Sizes the studio can offer (EU). Each style keeps the range it is made in: sizes = { women: [from, to], men: [from, to] },
+// Sizes the studio can offer (EU). Each style keeps the range it is made in: sizes = { women: [from, to], men: [from, to] } or { unisex: [from, to] },
 // leaving out a line it isn't made for. lace = the part that is the laces (customers pick a lace colour for it).
 const SIZE_LIST = { women: ["34.5","35","35.5","36","36.5","37","37.5","38","38.5","39","39.5","40","40.5","41","41.5","42","42.5","43","43.5","44","44.5","45"],
                     men: ["38.5","39","39.5","40","40.5","41","41.5","42","42.5","43","43.5","44","44.5","45"] };
-const SIZE_ZH = { women: "女款", men: "男款" };
-const fullSizes = () => Object.fromEntries(Object.entries(SIZE_LIST).map(([g, l]) => [g, [l[0], l[l.length - 1]]]));
+// 中性款 (unisex): one line of sizes instead of women's and men's (it can't be ticked together with them).
+SIZE_LIST.unisex = SIZE_LIST.women;
+const SIZE_ZH = { women: "女款", men: "男款", unisex: "中性款" };
+// A new style starts as women's and men's, all sizes.
+const fullSizes = () => Object.fromEntries(["women", "men"].map(g => [g, [SIZE_LIST[g][0], SIZE_LIST[g][SIZE_LIST[g].length - 1]]]));
 // buckle = the part that is the buckle (customers pick gold, silver or black for it).
 // only = parts that take just one kind of swatch: { a: "leather", c: "fabric" } (the rest take both).
 // up = parts where a print's top points up (counters, heels…); on the rest it points right, towards the heel.
@@ -1207,7 +1210,12 @@ function optsChange(e, o, parts) {
   const t = e.target;
   if (t.matches("input[data-g]")) {
     const g = t.dataset.g, list = SIZE_LIST[g];
-    if (t.checked) o.sizes[g] = [list[0], list[list.length - 1]];
+    if (t.checked) {
+      const l = o.whole ? list.filter(isWhole) : list;
+      o.sizes[g] = [l[0], l[l.length - 1]];
+      // Unisex replaces women's and men's, and the other way round.
+      Object.keys(o.sizes).filter(k => k !== g && (k === "unisex" || g === "unisex")).forEach(k => delete o.sizes[k]);
+    }
     else if (Object.keys(o.sizes).length > 1) delete o.sizes[g];
     else { t.checked = true; return false; }
   } else if (t.matches("select[data-g]")) {
@@ -1602,7 +1610,7 @@ $("artPublish").addEventListener("click", async () => {
   if (Object.keys(st.parts).length <= hwOf(art.opts).length) return say($("artStatus"), "鞋帶、釦子以外至少要有一個可換色的部位。", "bad");
   if ([...STYLE_LIST, ...STYLE_OFF, ...stPending].some(s => s.name === name)) return say($("artStatus"), `已經有叫「${name}」的鞋款，請換個名字。`, "bad");
   const soles = soleList();
-  if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、厚底）。", "bad");
+  if (soles.some(s => !s.name)) return say($("artStatus"), "請幫每個鞋底取名字（例如 Coffee、Beige、登山底）。", "bad");
   if (new Set(soles.map(s => s.name)).size < soles.length) return say($("artStatus"), "鞋底的名字不能重複。", "bad");
   const id = "s" + Date.now().toString(36), body = { ...st, ...settingsOf(art.opts, st.parts), ...(art.choices[art.at].views > 2 ? { views: art.choices[art.at].views } : {}), ...(soles.length ? { soles: solesData() } : {}), added: new Date().toISOString() };
   if (!token) {
