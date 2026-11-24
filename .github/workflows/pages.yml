@@ -12,11 +12,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
-  publish:
+  # Build and upload in one job, publish in a second one: when the publish step ran straight after the upload,
+  # GitHub sometimes couldn't find the just-uploaded files yet ("No artifacts named github-pages").
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -28,5 +27,12 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5
