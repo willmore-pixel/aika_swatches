@@ -49,7 +49,7 @@ h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--muted); letter-s
 .sw { display: grid; gap: 4px; font-size: 12px; font-weight: 700; text-align: center; color: var(--muted); }
 .sw i { display: block; aspect-ratio: 1; border-radius: 12px; border: 2px solid var(--line); background: var(--tile) center / cover; }
 .sw.new i { border-color: var(--ok); }
-.sw { position: relative; }
+.sw { position: relative; min-width: 0; overflow-wrap: anywhere; }  /* a long name with no spaces wraps instead of widening its column */
 .sw.gone { opacity: .45; }
 .sw .x { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 14px; line-height: 24px; font-weight: 900; padding: 0; }
 .sw.armed i { border-color: var(--bad); }
@@ -295,7 +295,7 @@ function seeName() {
 function dupNote(n, skipKey) {
   if (!n) return "";
   const same = [...SHOP, ...OFF].filter(s => keyOf(s) !== skipKey && (({ code, name }) => name || code)(splitName(s.name)).toLowerCase() === n.toLowerCase()).length;
-  return same ? `已經有 ${same} 張也叫「${n}」，客人會分不出來。可以加顏色或花紋，例如「${n} 藍綠」。` : "";
+  return same ? `已經有 ${same} 張也叫「${n}」。` : "";
 }
 function clearNameErr() { ["code", "name"].forEach(id => $(id).classList.remove("bad")); $("nameErr").textContent = ""; }
 ["code", "name"].forEach(id => $(id).addEventListener("input", () => { clearNameErr(); seeName(); }));
